@@ -308,6 +308,9 @@ class Piper(TTSBackend):
                 self._audio_sink = QAudioSink(fmt, self)
             if s.volume is not None:
                 self._audio_sink.setVolume(s.volume)
+            # On Windows, the buffer is zero causing data to be discarded.
+            # Ensure we have a nice large buffer on all platforms.
+            self._audio_sink.setBufferSize(2 * 1024 * 1024)
             self._audio_sink.stateChanged.connect(self._utterances_being_spoken.audio_state_changed)
             self._process.start()
             self._audio_sink.start(self._utterances_being_spoken)
@@ -468,10 +471,10 @@ class Piper(TTSBackend):
 
 
 def develop():  # {{{
-    import tty
 
     from qt.core import QSocketNotifier
 
+    from calibre.constants import iswindows
     from calibre.gui2 import Application
     app = Application([])
     p = Piper()
@@ -517,16 +520,19 @@ def develop():  # {{{
 
     p.state_changed.connect(state_changed)
     p.saying.connect(saying)
-    attr = tty.setraw(sys.stdin.fileno())
-    os.set_blocking(sys.stdin.fileno(), False)
+    if not iswindows:
+        import tty
+        attr = tty.setraw(sys.stdin.fileno())
+        os.set_blocking(sys.stdin.fileno(), False)
     sn = QSocketNotifier(sys.stdin.fileno(), QSocketNotifier.Type.Read, p)
     sn.activated.connect(input_ready)
     try:
         p.say(text)
         app.exec()
     finally:
-        import termios
-        termios.tcsetattr(sys.stdout.fileno(), termios.TCSANOW, attr)
+        if not iswindows:
+            import termios
+            termios.tcsetattr(sys.stdout.fileno(), termios.TCSANOW, attr)
 
 
 if __name__ == '__main__':
