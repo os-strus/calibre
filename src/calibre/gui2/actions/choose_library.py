@@ -323,7 +323,9 @@ class ChooseLibraryAction(InterfaceAction):
         self.rename_separator = self.choose_menu.addSeparator()
 
         self.switch_actions = []
-        for i in range(5):
+        no_items = tweaks['direct_library_items_in_menu']
+        no_items = max(min(no_items, 15), 3)
+        for i in range(no_items):
             ac = self.create_action(spec=('', None, None, None),
                     attr='switch_action%d'%i)
             ac.setObjectName(str(i))
