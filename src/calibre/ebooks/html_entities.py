@@ -91,7 +91,7 @@ html5_entities = {
     'DifferentialD': 'ⅆ',
     'Dopf': '𝔻',
     'Dot': '¨',
-    'DotDot': '⃜\u20dc',
+    'DotDot': '⃜',
     'DotEqual': '≐',
     'DoubleContourIntegral': '∯',
     'DoubleDot': '¨',
@@ -502,7 +502,7 @@ html5_entities = {
     'TRADE': '™',
     'TSHcy': 'Ћ',
     'TScy': 'Ц',
-    'Tab': '	',
+    'Tab': '\t',
     'Tau': 'Τ',
     'Tcaron': 'Ť',
     'Tcedil': 'Ţ',
@@ -1105,6 +1105,7 @@ html5_entities = {
     'hearts': '♥',
     'heartsuit': '♥',
     'hellip': '…',
+    'hellips': '…',
     'hercon': '⊹',
     'hfr': '𝔥',
     'hksearow': '⤥',
@@ -1857,6 +1858,7 @@ html5_entities = {
     'square': '□',
     'squarf': '▪',
     'squf': '▪',
+    'squot': "'",
     'srarr': '→',
     'sscr': '𝓈',
     'ssetmn': '∖',
@@ -2133,20 +2135,70 @@ html5_entities = {
 }
 
 
-if __name__ == '__main__':
-    import re
+def find_tests():
+    import unittest
+    class TestHTMLEntityReplacement(unittest.TestCase):
+        def test_html_entity_replacement(self):
+            from calibre_extensions.fast_html_entities import replace_all_entities
+            def t(inp, exp):
+                self.assertEqual(exp, replace_all_entities(inp), f'Failed for input: {inp!r}')
+            def x(inp, exp):
+                self.assertEqual(exp, replace_all_entities(inp, True), f'Failed for input: {inp!r}')
+            t('a&#1234;b', 'aӒb')
+            t('', '')
+            t('a', 'a')
+            t('&', '&')
+            t('&amp', '&amp')
+            t('&amp;', '&')
+            t('a&;b &#;c', 'a&;b &#;c')
+            t('&lt;', '<')
+            t('&amp;&lt;', '&<')
+            t('a&amp;b&lt;c', 'a&b<c')
+            t('a&acE;b', 'a∾̳b')
+            t('a&#1234;b', 'aӒb')
+            t('a&#X1234;b', 'a\u1234b')
+            t('a&#x1034fA;b', 'a\U001034fAb')
+            t('a&#0;b&#x000;c', 'abc')
+            x('&amp;&lt;&gt;&apos;&quot;', '&amp;&lt;&gt;&apos;&quot;')
 
-    from html5lib.constants import entities
-    entities = {k.replace(';', ''): entities[k] for k in entities}
+    return unittest.defaultTestLoader.loadTestsFromTestCase(TestHTMLEntityReplacement)
+
+
+def generate_entity_lists():
+    import re
+    from html import entities as e
+    entities = {k.rstrip(';'): e.name2codepoint[k] for k in e.name2codepoint}
+    entities.update({k.rstrip(';'): e.html5[k] for k in e.html5})
+    # common misspelled entity names
+    for k, v in {'squot': "'", 'hellips': entities['hellip']}.items():
+        if k not in entities:
+            entities[k] = v
     lines = []
+    native_lines = '''\
+struct html_entity { const char *name, *val; }
+%%
+'''.splitlines()
+
+    def esc_for_c(x):
+        if x == '\n':
+            return '\\n'
+        if x in '''"\\''':
+            return '\\' + x
+        return x
 
     for k in sorted(entities):
-        lines.append(f"    '{k}': {entities[k]!r},")
+        v = entities[k]
+        lines.append(f"    '{k}': {v!r},")
+        native_lines.append(f'"{esc_for_c(k)}","{esc_for_c(v)}"')
 
     with open(__file__, 'r+b') as f:
         raw = f.read().decode('utf-8')
-        raw = re.sub(r'^# ENTITY_DATA {{{.+^# }}}',
-                     '# ENTITY_DATA {{{\n' + '\n'.join(lines) + '\n# }}}',
-                     raw, flags=re.M | re.DOTALL)
-        f.seek(0), f.truncate()
-        f.write(raw.encode('utf-8'))
+        pat = re.compile(r'^# ENTITY_DATA {{{.+?^# }}}', flags=re.M | re.DOTALL)
+        raw = pat.sub(lambda m: '# ENTITY_DATA {{{\n' + '\n'.join(lines) + '\n# }}}', raw)
+        f.seek(0), f.truncate(), f.write(raw.encode('utf-8'))
+
+    import subprocess
+    with open(__file__.replace('.py', '.h'), 'wb') as f:
+        cp = subprocess.run(['gperf', '--struct-type', '--readonly', '--includes', '--compare-strncmp'], input='\n'.join(native_lines).encode(), stdout=f)
+        if cp.returncode != 0:
+            raise SystemExit(cp.returncode)

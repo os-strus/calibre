@@ -11,7 +11,7 @@ from functools import lru_cache
 from polyglot.builtins import environ_item, hasenv
 
 __appname__   = 'calibre'
-numeric_version = (7, 17, 101)
+numeric_version = (7, 18, 0)
 __version__   = '.'.join(map(str, numeric_version))
 git_version   = None
 __author__    = "Kovid Goyal <kovid@kovidgoyal.net>"
@@ -260,6 +260,7 @@ class ExtensionsImporter:
             'speedup',
             'html_as_json',
             'fast_css_transform',
+            'fast_html_entities',
             'unicode_names',
             'html_syntax_highlighter',
             'hyphen',

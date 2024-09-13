@@ -38,6 +38,7 @@ class EngineMetadata(NamedTuple):
     can_change_pitch: bool = True
     can_change_volume: bool = True
     voices_have_quality_metadata: bool = False
+    has_managed_voices: bool = False
 
 
 class Quality(Enum):
@@ -194,39 +195,43 @@ def available_engines() -> dict[str, EngineMetadata]:
 
     for x in QTextToSpeech.availableEngines():
         if x == 'winrt':
-            ans[x] = qt_engine_metadata(x, _('Modern Windows Speech Engine'), _(
+            ans[x] = qt_engine_metadata(x, _('Modern Windows Engine'), _(
                 'The "winrt" engine can track the currently spoken word on screen. Additional voices for it are available from Microsoft.'
                 ), True)
         elif x == 'darwin':
-            ans[x] = qt_engine_metadata(x, _('macOS Speech Engine'), _(
+            ans[x] = qt_engine_metadata(x, _('macOS Engine'), _(
                 'The "darwin" engine can track the currently spoken word on screen. Additional voices for it are available from Apple.'
             ))
         elif x == 'sapi':
-            ans[x] = qt_engine_metadata(x, _('Legacy Windows Speech Engine'), _(
+            ans[x] = qt_engine_metadata(x, _('Legacy Windows Engine'), _(
                 'The "sapi" engine can track the currently spoken word on screen. It is no longer supported by Microsoft.'
             ))
         elif x == 'macos':
             # this is slated for removal in Qt 6.8 so skip it
             continue
         elif x == 'flite':
-            ans[x] = qt_engine_metadata(x, _('The "flite" Speech engine'), _(
+            ans[x] = qt_engine_metadata(x, _('The "flite" Engine'), _(
                 'The "flite" engine can track the currently spoken word on screen.'
             ), True)
         elif x == 'speechd':
             continue
     if piper_cmdline():
-        ans['piper'] = EngineMetadata('piper', _('The Piper Neural Speech Engine'), _(
+        ans['piper'] = EngineMetadata('piper', _('The Piper Neural Engine'), _(
             'The "piper" engine can track the currently spoken sentence on screen. It uses a neural network '
             'for natural sounding voices. The neural network is run locally on your computer, it is fairly resource intensive to run.'
-        ), TrackingCapability.Sentence, can_change_pitch=False, voices_have_quality_metadata=True)
+        ), TrackingCapability.Sentence, can_change_pitch=False, voices_have_quality_metadata=True, has_managed_voices=True)
     if islinux:
-        from speechd.paths import SPD_SPAWN_CMD
-        cmd = os.getenv("SPEECHD_CMD", SPD_SPAWN_CMD)
-        if cmd and os.access(cmd, os.X_OK) and os.path.isfile(cmd):
-            ans['speechd'] = EngineMetadata('speechd', _('The Speech Dispatcher Speech Engine'), _(
-                'The "speechd" engine can usually track the currently spoken word on screen, however, it depends on the'
-                ' underlying output module. The default espeak output module does support it.'
-            ), TrackingCapability.WordByWord, allows_choosing_audio_device=False, has_multiple_output_modules=True)
+        try:
+            from speechd.paths import SPD_SPAWN_CMD
+        except ImportError:
+            pass
+        else:
+            cmd = os.getenv("SPEECHD_CMD", SPD_SPAWN_CMD)
+            if cmd and os.access(cmd, os.X_OK) and os.path.isfile(cmd):
+                ans['speechd'] = EngineMetadata('speechd', _('The Speech Dispatcher Engine'), _(
+                    'The "speechd" engine can usually track the currently spoken word on screen, however, it depends on the'
+                    ' underlying output module. The default espeak output module does support it.'
+                ), TrackingCapability.WordByWord, allows_choosing_audio_device=False, has_multiple_output_modules=True)
 
     return ans
 
@@ -280,6 +285,15 @@ class TTSBackend(QObject):
 
     def validate_settings(self, s: EngineSpecificSettings, parent: QWidget | None) -> bool:
         return True
+
+    def is_voice_downloaded(self, v: Voice) -> bool:
+        return True
+
+    def delete_voice(self, v: Voice) -> None:
+        pass
+
+    def download_voice(self, v: Voice) -> None:
+        pass
 
 
 engine_instances: dict[str, TTSBackend] = {}

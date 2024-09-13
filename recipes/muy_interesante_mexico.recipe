@@ -2,11 +2,14 @@
 from calibre.web.feeds.news import BasicNewsRecipe, classes
 
 
-class RevistaMuyInteresante(BasicNewsRecipe):
-    title = 'Revista Muy Interesante'
+class MuyInteresante(BasicNewsRecipe):
+    title = 'Muy Interesante México'
     __author__ = 'unkn0wn'
-    description = 'Revista Muy Interesante, es un sitio con información sobre ciencia, tecnología, historia, sociedad, medio ambiente, etc.'
-    language = 'es'
+    description = (
+        'Muy Interesante México, de la Revista Muy Interesante, es un sitio con información '
+        'sobre ciencia, tecnología, historia, sociedad, medio ambiente, etc.'
+    )
+    language = 'es_MX'
     encoding = 'utf-8'
     no_stylesheets = True
     remove_javascript = True
@@ -46,7 +49,7 @@ class RevistaMuyInteresante(BasicNewsRecipe):
         return soup
 
     def parse_index(self):
-        soup = self.index_to_soup('https://www.muyinteresante.com/')
+        soup = self.index_to_soup('https://www.muyinteresante.com.mx/')
         ans = []
         for articles in soup.findAll('article'):
             a = articles.find('a', attrs={'class':'page-link', 'href':True})
