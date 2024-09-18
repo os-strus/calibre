@@ -2064,7 +2064,7 @@ class BuiltinGetLink(BuiltinFormatterFunction):
         db = self.get_database(mi).new_api
         try:
             link = None
-            item_id = db.get_item_id(field_name, field_value)
+            item_id = db.get_item_id(field_name, field_value, case_sensitive=True)
             if item_id is not None:
                 link = db.link_for(field_name, item_id)
             return link if link is not None else ''
@@ -2576,7 +2576,7 @@ class BuiltinGetNote(BuiltinFormatterFunction):
     category = 'Template database functions'
     __doc__ = doc = _("get_note(field_name, field_value, plain_text) -- fetch the "
                       "note for field 'field_name' with value 'field_value'. If "
-                      "'plain_text' is empty, return the note's HTML including"
+                      "'plain_text' is empty, return the note's HTML including "
                       "images. If 'plain_text' is 1 (or '1'), return the "
                       "note's plain text. If the note doesn't exist, return the "
                       "empty string in both cases. Example: "
@@ -2587,7 +2587,7 @@ class BuiltinGetNote(BuiltinFormatterFunction):
         db = self.get_database(mi).new_api
         try:
             note = None
-            item_id = db.get_item_id(field_name, field_value)
+            item_id = db.get_item_id(field_name, field_value, case_sensitive=True)
             if item_id is not None:
                 note = db.notes_data_for(field_name, item_id)
                 if note is not None:
@@ -2634,7 +2634,7 @@ class BuiltinHasNote(BuiltinFormatterFunction):
         db = self.get_database(mi).new_api
         note = None
         try:
-            item_id = db.get_item_id(field_name, field_value)
+            item_id = db.get_item_id(field_name, field_value, case_sensitive=True)
             if item_id is not None:
                 note = db.notes_data_for(field_name, item_id)
         except Exception as e:

@@ -510,6 +510,12 @@ many_libraries = 10
 direct_library_items_in_menu = 5
 #  ORIO changes end
 
+#: Number of Libraries in the direct access section of Library Menu
+# In the Library Menu there is a section of direct library access
+# this parameter define the number of library that appear in it.
+# The value can be between 3 and 15
+direct_library_items_in_menu = 5
+
 #: Choose available output formats for conversion
 # Restrict the list of available output formats in the conversion dialogs.
 # For example, if you only want to convert to EPUB and AZW3, change this to
