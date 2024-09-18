@@ -501,6 +501,14 @@ completion_mode = 'prefix'
 # number of such libraries, the sorting becomes alphabetic. You can set that
 # number here. The default is ten libraries.
 many_libraries = 10
+ 
+#  ORIO changes start
+#: Number of Libraries in the direct access section of Library Menu
+# In the Library Menu there is a section of direct library access
+# this parameter define the number of library that appear in it.
+# The value can be between 3 and 15
+direct_library_items_in_menu = 5
+#  ORIO changes end
 
 #: Choose available output formats for conversion
 # Restrict the list of available output formats in the conversion dialogs.
