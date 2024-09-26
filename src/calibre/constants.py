@@ -10,8 +10,8 @@ from functools import lru_cache
 
 from polyglot.builtins import environ_item, hasenv
 
-__appname__   = 'calibre'
-numeric_version = (7, 18, 100)
+__appname__   = 'calibre-viewer'                                        # ORIO
+numeric_version = (7, 18, 100)                                          # ORIO
 __version__   = '.'.join(map(str, numeric_version))
 git_version   = None
 __author__    = "Kovid Goyal <kovid@kovidgoyal.net>"
@@ -382,7 +382,7 @@ elif iswindows:
         config_dir = None
     if not config_dir or not os.access(config_dir, os.W_OK|os.X_OK):
         config_dir = os.path.expanduser('~')
-    config_dir = os.path.join(config_dir, 'calibre')
+    config_dir = os.path.join(config_dir, 'calibre-viewer')                                         # ORIO
 elif ismacos:
     config_dir = os.path.expanduser('~/Library/Preferences/calibre')
 else:
