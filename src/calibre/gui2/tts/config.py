@@ -173,18 +173,22 @@ class Voices(QTreeWidget):
             self.itemChanged.connect(self.item_changed)
 
     def item_changed(self, item: QTreeWidgetItem, column: int):
-        if column == 0 and item.parent() is not self.invisibleRootItem() and not self.ignore_item_changes:
+        if column == 0 and self.is_voice_item(item) and not self.ignore_item_changes:
             if item.checkState(0) == Qt.CheckState.Checked:
                 p = item.parent()
-                for child in (p.child(i) for i in range(p.childCount())):
-                    if child is not item and child.checkState(0) == Qt.CheckState.Checked:
-                        self.ignore_item_changes = True
-                        child.setCheckState(0, Qt.CheckState.Unchecked)
-                        self.ignore_item_changes = False
+                if p is not None:
+                    for child in (p.child(i) for i in range(p.childCount())):
+                        if child is not item and child.checkState(0) == Qt.CheckState.Checked:
+                            self.ignore_item_changes = True
+                            child.setCheckState(0, Qt.CheckState.Unchecked)
+                            self.ignore_item_changes = False
+
+    def is_voice_item(self, item):
+        return item is not None and isinstance(item.data(0, Qt.ItemDataRole.UserRole), Voice)
 
     def mousePressEvent(self, event):
         item = self.itemAt(event.pos())
-        if self.for_embedding and item and item.parent() is not self.invisibleRootItem():
+        if self.for_embedding and self.is_voice_item(item):
             rect = self.visualItemRect(item)
             x = event.pos().x() - (rect.x() + self.frameWidth())
             option = QStyleOptionViewItem()
@@ -201,8 +205,9 @@ class Voices(QTreeWidget):
 
     def set_item_downloaded_state(self, ans: QTreeWidgetItem) -> None:
         voice = ans.data(0, Qt.ItemDataRole.UserRole)
-        is_downloaded = bool(voice and voice.engine_data and voice.engine_data.get('is_downloaded'))
-        ans.setFont(0, self.highlight_font if is_downloaded else self.normal_font)
+        if isinstance(voice, Voice):
+            is_downloaded = bool(voice and voice.engine_data and voice.engine_data.get('is_downloaded'))
+            ans.setFont(0, self.highlight_font if is_downloaded else self.normal_font)
 
     def set_voices(
         self, all_voices: tuple[Voice, ...], current_voice: str, engine_metadata: EngineMetadata,
@@ -272,11 +277,13 @@ class Voices(QTreeWidget):
     def current_voice(self) -> Voice | None:
         ci = self.currentItem()
         if ci is not None:
-            return ci.data(0, Qt.ItemDataRole.UserRole)
+            ans = ci.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(ans, Voice):
+                return ans
 
     def refresh_current_item(self) -> None:
         ci = self.currentItem()
-        if ci is not None:
+        if self.is_voice_item(ci):
             self.set_item_downloaded_state(ci)
 
 
