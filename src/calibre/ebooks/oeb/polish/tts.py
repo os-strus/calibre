@@ -84,6 +84,7 @@ def mark_sentences_in_html(root, lang: str = '', voice: str = '') -> list[Senten
             self.tag_name = tag_name
             self.lang = child_lang or lang_for_elem(elem, parent_lang)
             self.parent_lang = parent_lang
+            self.parent_voice = parent_voice
             q = elem.get('data-calibre-tts', '')
             self.voice = parent_voice
             if q.startswith('{'):  # }
@@ -127,6 +128,7 @@ def mark_sentences_in_html(root, lang: str = '', voice: str = '') -> list[Senten
                         before = self.elem.tail[:start]
                     span = self.make_wrapper(text, p)
                     spans.append(span)
+                    ans.append(Sentence(span.get('id'), text, self.parent_lang, self.parent_voice))
                     after = self.elem.tail[end:]
                 self.elem.tail = before
                 if after and spans:
@@ -171,10 +173,12 @@ def mark_sentences_in_html(root, lang: str = '', voice: str = '') -> list[Senten
                     w.append(c)
                     first_child = c
                 if in_range:
-                    if last_child is not first_child:
-                        w.append(last_child)
                     if c is last_child:
+                        if last_child is not first_child:
+                            w.append(c)
                         break
+                    else:
+                        w.append(c)
             self.replace_reference_to_child(last_child, w)
             return w
 
@@ -534,6 +538,7 @@ def embed_tts(container, report_progress=None, callback_to_download_voices=None)
         html_item.set('media-overlay', smilitem.get('id'))
         duration_map[smilitem.get('id')] = file_duration
     container.set_media_overlay_durations(duration_map)
+    return True
 
 
 def develop():

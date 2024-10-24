@@ -344,6 +344,7 @@ class TagListEditor(QDialog, Ui_TagListEditor):
                  ttm_is_first_letter=False, category=None, fm=None, link_map=None):
         QDialog.__init__(self, window)
         Ui_TagListEditor.__init__(self)
+        self.table_column_widths = None
         self.setupUi(self)
 
         from calibre.gui2.ui import get_gui
@@ -351,7 +352,7 @@ class TagListEditor(QDialog, Ui_TagListEditor):
         self.search_box.setMinimumContentsLength(25)
         if category is not None:
             item_map = get_gui().current_db.new_api.get_item_name_map(category)
-            self.original_links = {item_map[k]:v for k,v in link_map.items()}
+            self.original_links = {item_map[k]:v for k,v in link_map.items() if k in item_map}
             self.current_links = copy.copy(self.original_links)
         else:
             self.original_links = {}
@@ -629,6 +630,7 @@ class TagListEditor(QDialog, Ui_TagListEditor):
         # If we don't then the old items remain even if replaced by setItem().
         # I'm not sure if this is standard Qt behavior or behavior triggered by
         # something in this class, but replacing the table fixes it.
+        self.table_column_widths = gprefs.get('tag_list_editor_table_widths', None)
         if self.table is not None:
             self.save_geometry()
             self.central_layout.removeWidget(self.table)
@@ -684,7 +686,6 @@ class TagListEditor(QDialog, Ui_TagListEditor):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
 
         self.restore_geometry(gprefs, 'tag_list_editor_dialog_geometry')
-        self.table_column_widths = gprefs.get('tag_list_editor_table_widths', None)
         if self.table_column_widths is not None:
             for col,width in enumerate(self.table_column_widths):
                 self.table.setColumnWidth(col, width)
@@ -729,6 +730,13 @@ class TagListEditor(QDialog, Ui_TagListEditor):
             tags = self.ordered_tags
 
         select_item = None
+        tooltips = ( # must be in the same order as the columns in the table
+             _('Name of the item'),
+             _('Count of books with this item'),
+             _('Value of the item before it was edited'),
+             _('The link (URL) associated with this item'),
+             _('Whether the item has a note. The icon changes if the note was created or edited')
+        )
         with block_signals(self.table):
             self.name_col = QTableWidgetItem(self.category_name)
             self.table.setHorizontalHeaderItem(VALUE_COLUMN, self.name_col)
@@ -741,6 +749,9 @@ class TagListEditor(QDialog, Ui_TagListEditor):
             if self.supports_notes:
                 self.notes_col = QTableWidgetItem(_('Notes'))
                 self.table.setHorizontalHeaderItem(4, self.notes_col)
+            for i,tt in enumerate(tooltips):
+                header_item = self.table.horizontalHeaderItem(i)
+                header_item.setToolTip(tt)
 
             self.table.setRowCount(len(tags))
             if self.supports_notes:
