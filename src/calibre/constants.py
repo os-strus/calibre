@@ -10,8 +10,8 @@ from functools import lru_cache
 
 from polyglot.builtins import environ_item, hasenv
 
-__appname__   = 'calibre-viewer'                                        # ORIO
-numeric_version = (7, 20, 0)
+__appname__   = 'calibre-viewer'                                    # ORIO
+numeric_version = (7, 20, 101)
 __version__   = '.'.join(map(str, numeric_version))
 git_version   = None
 __author__    = "Kovid Goyal <kovid@kovidgoyal.net>"
