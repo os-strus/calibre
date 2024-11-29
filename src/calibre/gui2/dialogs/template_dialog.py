@@ -36,6 +36,7 @@ from qt.core import (
     QTableWidgetItem,
     QTextCharFormat,
     QTextOption,
+    QTimer,
     QToolButton,
     QVBoxLayout,
     pyqtSignal,
@@ -45,7 +46,7 @@ from calibre import sanitize_file_name
 from calibre.constants import config_dir, iswindows
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.book.formatter import SafeFormat
-from calibre.gui2 import choose_files, choose_save_file, error_dialog, gprefs, pixmap_to_data, question_dialog, safe_open_url
+from calibre.gui2 import choose_files, choose_save_file, error_dialog, gprefs, info_dialog, pixmap_to_data, question_dialog, safe_open_url
 from calibre.gui2.dialogs.template_dialog_ui import Ui_TemplateDialog
 from calibre.gui2.dialogs.template_general_info import GeneralInformationDialog
 from calibre.gui2.widgets2 import Dialog, HTMLDisplay
@@ -68,6 +69,8 @@ class DocViewer(Dialog):
         self.builtins = builtins
         self.function_type_string = function_type_string_method
         self.last_operation = None
+        self.last_function = None
+        self.back_stack = []
         super().__init__(title=_('Template function documentation'), name='template_editor_doc_viewer_dialog',
                          default_buttons=QDialogButtonBox.StandardButton.Close, parent=parent)
 
@@ -82,18 +85,51 @@ class DocViewer(Dialog):
         e = self.doc_viewer_widget = HTMLDisplay(self)
         if iswindows:
             e.setDefaultStyleSheet('pre { font-family: "Segoe UI Mono", "Consolas", monospace; }')
-        e.anchor_clicked.connect(safe_open_url)
+        e.anchor_clicked.connect(self.url_clicked)
         l.addWidget(e)
         bl = QHBoxLayout()
         l.addLayout(bl)
-        self.english_cb = cb = QCheckBox(_('Show documentation in original &English'))
+        self.english_cb = cb = QCheckBox(_('Show documentation as original &English'))
         cb.setChecked(gprefs.get('template_editor_docs_in_english', False))
         cb.stateChanged.connect(self.english_cb_state_changed)
         bl.addWidget(cb)
         bl.addWidget(self.bb)
+
+        b = self.back_button = self.bb.addButton(_('&Back'), QDialogButtonBox.ButtonRole.ActionRole)
+        b.clicked.connect(self.back)
+        b.setToolTip((_('Displays the previously viewed function')))
+        b.setEnabled(False)
+
         b = self.bb.addButton(_('Show &all functions'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.clicked.connect(self.show_all_functions)
+        b.clicked.connect(self.show_all_functions_button_clicked)
         b.setToolTip((_('Shows a list of all built-in functions in alphabetic order')))
+
+    def back(self):
+        if not self.back_stack:
+            info_dialog(self, _('Go back'), _('No function to go back to'), show=True)
+        else:
+            place = self.back_stack.pop()
+            self.back_button.setEnabled(bool(self.back_stack))
+            if isinstance(place, int):
+                self.show_all_functions()
+                # For reasons known only to Qt, I can't set the scroll bar position
+                # until some time has passed.
+                QTimer.singleShot(10, lambda: self.doc_viewer_widget.verticalScrollBar().setValue(place))
+            else:
+                self._show_function(place)
+
+    def add_to_back_stack(self):
+        if self.last_function is not None:
+            self.back_stack.append(self.last_function)
+        elif self.last_operation is not None:
+            self.back_stack.append(self.doc_viewer_widget.verticalScrollBar().value())
+        self.back_button.setEnabled(bool(self.back_stack))
+
+    def url_clicked(self, qurl):
+        if qurl.scheme().startswith('http'):
+            safe_open_url(qurl)
+        else:
+            self.show_function(qurl.path())
 
     def english_cb_state_changed(self):
         if self.last_operation is not None:
@@ -107,16 +143,32 @@ class DocViewer(Dialog):
         doc = func.doc if hasattr(func, 'doc') else ''
         return doc.raw_text if self.english_cb.isChecked() and hasattr(doc, 'raw_text') else doc
 
+    def no_doc_string(self):
+        if self.english_cb.isChecked():
+            return 'No documentation provided'
+        return _('No documentation provided')
+
     def show_function(self, fname):
+        if fname in self.builtins and fname != self.last_function:
+            self.add_to_back_stack()
+            self._show_function(fname)
+
+    def _show_function(self, fname):
         self.last_operation = partial(self.show_function, fname)
         bif = self.builtins[fname]
         if fname not in self.builtins or not bif.doc:
-            self.set_html(self.header_line(fname) + ('No documentation provided'))
+            self.set_html(self.header_line(fname) + self.no_doc_string())
         else:
+            self.last_function = fname
             self.set_html(self.header_line(fname) +
                           self.ffml.document_to_html(self.get_doc(bif), fname))
 
+    def show_all_functions_button_clicked(self):
+        self.add_to_back_stack()
+        self.show_all_functions()
+
     def show_all_functions(self):
+        self.last_function = None
         self.last_operation = self.show_all_functions
         result = []
         a = result.append
@@ -125,9 +177,16 @@ class DocViewer(Dialog):
             try:
                 doc = self.get_doc(self.builtins[name])
                 if not doc:
-                    a(_('No documentation provided'))
+                    a(self.no_doc_string())
                 else:
-                    a(self.ffml.document_to_html(doc.strip(), name))
+                    html = self.ffml.document_to_html(doc.strip(), name)
+                    name_pos = html.find(name + '(')
+                    if name_pos < 0:
+                        rest_of_doc = ' -- ' + html
+                    else:
+                        rest_of_doc = html[name_pos + len(name):]
+                    html = f'<a href="ffdoc:{name}">{name}</a>{rest_of_doc}'
+                    a(html)
             except Exception:
                 print('Exception in', name)
                 raise
@@ -541,6 +600,8 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         self.doc_viewer = None
         self.current_function_name = None
         self.documentation.setReadOnly(True)
+        self.documentation.setOpenLinks(False)
+        self.documentation.anchorClicked.connect(self.url_clicked)
         self.source_code.setReadOnly(True)
         self.doc_button.clicked.connect(self.open_documentation_viewer)
         self.general_info_button.clicked.connect(self.open_general_info_dialog)
@@ -569,7 +630,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         except:
             self.builtin_source_dict = {}
 
-        func_names = sorted(self.all_functions)
+        self.function_names = func_names = sorted(self.all_functions)
         self.function.clear()
         self.function.addItem('')
         for f in func_names:
@@ -603,6 +664,15 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         # Now geometry
         self.restore_geometry(gprefs, self.geometry_string('template_editor_dialog_geometry'))
 
+    def url_clicked(self, qurl):
+        if qurl.scheme().startswith('http'):
+            safe_open_url(qurl)
+        elif qurl.scheme() == 'ffdoc':
+            name = qurl.path()
+            if name in self.function_names:
+                dex = self.function_names.index(name)
+                self.function.setCurrentIndex(dex+1)
+
     def open_documentation_viewer(self):
         if self.doc_viewer is None:
             dv = self.doc_viewer = DocViewer(self.ffml, self.all_functions,
@@ -618,7 +688,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         self.doc_viewer = None
 
     def open_general_info_dialog(self):
-        GeneralInformationDialog().exec()
+        GeneralInformationDialog(include_general_doc=True, include_ffml_doc=True).exec()
 
     def geometry_string(self, txt):
         if self.dialog_number is None or self.dialog_number == 0:
