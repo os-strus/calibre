@@ -34,9 +34,43 @@ from calibre.utils.config import tweaks
 from calibre.utils.date import UNDEFINED_DATE, format_date, now, parse_date
 from calibre.utils.icu import capitalize, sort_key, strcmp
 from calibre.utils.icu import lower as icu_lower
-from calibre.utils.localization import _, calibre_langcode_to_name, canonicalize_lang
+from calibre.utils.localization import _ as xlated
+from calibre.utils.localization import calibre_langcode_to_name, canonicalize_lang
 from calibre.utils.titlecase import titlecase
 from polyglot.builtins import iteritems, itervalues
+
+
+# Class and method to save an untranslated copy of translated strings
+class TranslatedStringWithRaw(str):
+
+    def __new__(cls, raw_english, raw_other, formatted_english, formatted_other):
+        instance = super().__new__(cls, formatted_other)
+        instance.raw_english = raw_english
+        instance.raw_other = raw_other
+        instance.formatted_english = formatted_english
+        instance.formatted_other = formatted_other
+        instance.did_format = False
+        return instance
+
+    def format(self, *args, **kw):
+        formatted_english = self.raw_english.format(*args, **kw)
+        formatted_other = self.raw_other.format(*args, **kw)
+        v = TranslatedStringWithRaw(self.raw_english, self.raw_other,
+                                       formatted_english, formatted_other)
+        v.saved_args = args
+        v.saved_kwargs = kw
+        v.did_format = True
+        return v
+
+    def format_again(self, txt):
+        if self.did_format:
+            return txt.format(*self.saved_args, **self.saved_kwargs)
+        return txt
+
+
+def _(txt):
+    translated = xlated(txt)
+    return TranslatedStringWithRaw(txt, translated, txt, translated)
 
 
 class StoredObjectType(Enum):
@@ -48,7 +82,7 @@ class StoredObjectType(Enum):
 class FormatterFunctions:
 
     error_function_body = ('def evaluate(self, formatter, kwargs, mi, locals):\n'
-                       '\treturn "' +
+                           '\treturn "' +
                             _('Duplicate user function name {0}. '
                               'Change the name or ensure that the functions are identical') + '"')
 
@@ -219,7 +253,7 @@ class BuiltinStrcmp(BuiltinFormatterFunction):
     arg_count = 5
     category = 'Relational'
     __doc__ = doc = _(
-'''
+r'''
 ``strcmp(x, y, lt, eq, gt)`` -- does a case-insensitive lexical comparison of
 ``x`` and ``y``. Returns ``lt`` if ``x < y``, ``eq`` if ``x == y``, otherwise
 ``gt``. This function can often be replaced by one of the lexical comparison
@@ -240,7 +274,7 @@ class BuiltinStrcmpcase(BuiltinFormatterFunction):
     arg_count = 5
     category = 'Relational'
     __doc__ = doc = _(
-'''
+r'''
 ``strcmpcase(x, y, lt, eq, gt)`` -- does a case-sensitive lexical comparison of
 ``x`` and ``y``. Returns ``lt`` if ``x < y``, ``eq`` if ``x == y``, otherwise
 ``gt``.
@@ -264,8 +298,8 @@ class BuiltinCmp(BuiltinFormatterFunction):
     name = 'cmp'
     category = 'Relational'
     arg_count = 5
-    __doc__ = doc =   _(
-'''
+    __doc__ = doc = _(
+r'''
 ``cmp(x, y, lt, eq, gt)`` -- compares ``x`` and ``y`` after converting both to
 numbers. Returns ``lt`` if ``x <# y``, ``eq`` if ``x ==# y``, otherwise ``gt``.
 This function can usually be replaced with one of the numeric compare operators
@@ -286,8 +320,8 @@ class BuiltinFirstMatchingCmp(BuiltinFormatterFunction):
     name = 'first_matching_cmp'
     category = 'Relational'
     arg_count = -1
-    __doc__ = doc =   _(
-'''
+    __doc__ = doc = _(
+r'''
 ``first_matching_cmp(val, [ cmp, result, ]* else_result)`` -- compares ``val < cmp``
 in sequence, returning the associated result for the first comparison that
 succeeds. Returns else_result if no comparison succeeds.
@@ -316,7 +350,7 @@ class BuiltinStrcat(BuiltinFormatterFunction):
     arg_count = -1
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``strcat(a [, b]*)`` -- can take any number of arguments. Returns a string
 formed by concatenating all the arguments.
 ''')
@@ -334,7 +368,7 @@ class BuiltinStrlen(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``strlen(value)`` -- Returns the length of the string ``value``.
 ''')
 
@@ -355,6 +389,7 @@ class BuiltinAdd(BuiltinFormatterFunction):
 argument is not a number. In most cases you can use the ``+`` operator instead
 of this function.
 ''')
+# r'''No documentation provided''') # for debugging xlated text using French
 
     def evaluate(self, formatter, kwargs, mi, locals, *args):
         res = 0
@@ -369,7 +404,7 @@ class BuiltinSubtract(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Arithmetic'
     __doc__ = doc = _(
-'''
+r'''
 ``subtract(x, y)`` -- returns ``x - y``. Throws an exception if either ``x`` or
 ``y`` are not numbers. This function can usually be replaced by the ``-``
 operator.
@@ -386,7 +421,7 @@ class BuiltinMultiply(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Arithmetic'
     __doc__ = doc = _(
-'''
+r'''
 ``multiply(x [, y]*)`` -- returns the product of its arguments. Throws an
 exception if any argument is not a number. This function can usually be replaced
 by the ``*`` operator.
@@ -405,7 +440,7 @@ class BuiltinDivide(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Arithmetic'
     __doc__ = doc = _(
-'''
+r'''
 ``divide(x, y)`` -- returns ``x / y``. Throws an exception if either ``x`` or
 ``y`` are not numbers. This function can usually be replaced by the ``/``
 operator.
@@ -422,7 +457,7 @@ class BuiltinCeiling(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Arithmetic'
     __doc__ = doc = _(
-'''
+r'''
 ``ceiling(x)`` -- returns the smallest integer greater than or equal to ``x``.
 Throws an exception if ``x`` is not a number.
 ''')
@@ -437,7 +472,7 @@ class BuiltinFloor(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Arithmetic'
     __doc__ = doc = _(
-'''
+r'''
 ``floor(x)`` -- returns the largest integer less than or equal to ``x``. Throws
 an exception if ``x`` is not a number.
 ''')
@@ -452,7 +487,7 @@ class BuiltinRound(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Arithmetic'
     __doc__ = doc = _(
-'''
+r'''
 ``round(x)`` -- returns the nearest integer to ``x``. Throws an exception if
 ``x`` is not a number.
 ''')
@@ -467,7 +502,7 @@ class BuiltinMod(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Arithmetic'
     __doc__ = doc = _(
-'''
+r'''
 ``mod(x, y)`` -- returns the ``floor`` of the remainder of ``x / y``. Throws an
 exception if either ``x`` or ``y`` is not a number.
 ''')
@@ -483,7 +518,7 @@ class BuiltinFractionalPart(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Arithmetic'
     __doc__ = doc = _(
-'''
+r'''
 ``fractional_part(value)`` -- returns the part of the value after the decimal
 point. For example, ``fractional_part(3.14)`` returns ``0.14``. Throws an
 exception if ``value`` is not a number.
@@ -500,7 +535,7 @@ class BuiltinTemplate(BuiltinFormatterFunction):
     category = 'Recursion'
 
     __doc__ = doc = _(
-'''
+r'''
 ``template(x)`` -- evaluates ``x`` as a template. The evaluation is done in its
 own context, meaning that variables are not shared between the caller and the
 template evaluation.  If not using General Program Mode, because the ``{`` and
@@ -522,7 +557,7 @@ class BuiltinEval(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Recursion'
     __doc__ = doc = _(
-'''
+r'''
 ``eval(string)`` -- evaluates the string as a program, passing the local
 variables. This permits using the template processor to construct complex
 results from local variables. In
@@ -546,7 +581,7 @@ class BuiltinAssign(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Other'
     __doc__ = doc = _(
-'''
+r'''
 ``assign(id, value)`` -- assigns ``value`` to ``id``, then returns ``value``. ``id``
 must be an identifier, not an expression. In most cases you can use the ``=``
 operator instead of this function.
@@ -562,7 +597,7 @@ class BuiltinListSplit(BuiltinFormatterFunction):
     arg_count = 3
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_split(list_val, sep, id_prefix)`` -- splits ``list_val`` into separate
 values using ``sep``, then assigns the values to local variables named
 ``id_prefix_N`` where N is the position of the value in the list. The first item
@@ -574,9 +609,9 @@ Example:
 [/CODE]
 is equivalent to:
 [CODE]
-    var_0 = 'one';
-    var_1 = 'two';
-    var_2 = 'foo
+    var_0 = 'one'
+    var_1 = 'two'
+    var_2 = 'foo'
 [/CODE]
 ''')
 
@@ -593,7 +628,7 @@ class BuiltinPrint(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Other'
     __doc__ = doc = _(
-'''
+r'''
 ``print(a [, b]*)`` -- prints the arguments to standard output. Unless you start
 calibre from the command line (``calibre-debug -g``), the output will go into a
 black hole. The ``print`` function always returns its first argument.
@@ -609,7 +644,7 @@ class BuiltinField(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``field(lookup_name)`` -- returns the value of the metadata field with lookup name ``lookup_name``.
 ''')
 
@@ -622,7 +657,7 @@ class BuiltinRawField(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``raw_field(lookup_name [, optional_default])`` -- returns the metadata field
 named by ``lookup_name`` without applying any formatting. It evaluates and
 returns the optional second argument ``optional_default`` if the field's value
@@ -647,7 +682,7 @@ class BuiltinRawList(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``raw_list(lookup_name, separator)`` -- returns the metadata list named by
 ``lookup_name`` without applying any formatting or sorting, with the items
 separated by separator.
@@ -665,7 +700,7 @@ class BuiltinSubstr(BuiltinFormatterFunction):
     arg_count = 3
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``substr(str, start, end)`` -- returns the ``start``'th through the ``end``'th
 characters of ``str``. The first character in ``str`` is the zero'th character.
 If ``end`` is negative then it indicates that many characters counting from the
@@ -683,11 +718,11 @@ class BuiltinLookup(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Iterating over values'
     __doc__ = doc = _(
-'''
+r'''
 ``lookup(value, [ pattern, key, ]* else_key)`` -- The patterns will be checked against
 the value in order. If a pattern matches then the value of the field named by
 ``key`` is returned. If no pattern matches then the value of the field named by
-``else_key`` is returned. See also the ``switch()`` function.
+``else_key`` is returned. See also the :ref:`switch` function.
 ''')
 
     def evaluate(self, formatter, kwargs, mi, locals, val, *args):
@@ -712,7 +747,7 @@ class BuiltinTest(BuiltinFormatterFunction):
     arg_count = 3
     category = 'If-then-else'
     __doc__ = doc = _(
-'''
+r'''
 ``test(value, text if not empty, text if empty)`` -- return ``text if not empty`` if
 the value is not empty, otherwise return ``text if empty``.
 ''')
@@ -729,7 +764,7 @@ class BuiltinContains(BuiltinFormatterFunction):
     arg_count = 4
     category = 'If-then-else'
     __doc__ = doc = _(
-'''
+r'''
 ``contains(value, pattern, text if match, text if not match)`` -- checks if the value
 is matched by the regular expression ``pattern``. Returns ``text if match`` if
 the pattern matches the value, otherwise returns ``text if no match``.
@@ -748,11 +783,11 @@ class BuiltinSwitch(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Iterating over values'
     __doc__ = doc = _(
-'''
-``switch(value, [pattern, value,]+ else_value)`` -- for each ``pattern, value`` pair,
-checks if the value matches the regular expression ``pattern`` and if so returns
-the associated ``value``. If no ``pattern`` matches, then ``else_value`` is
-returned. You can have as many ``pattern, value`` pairs as you wish. The first
+r'''
+``switch(value, [patternN, valueN,]+ else_value)`` -- for each ``patternN, valueN`` pair,
+checks if the ``value`` matches the regular expression ``patternN`` and if so returns
+the associated ``valueN``. If no ``patternN`` matches, then ``else_value`` is
+returned. You can have as many ``patternN, valueN`` pairs as you wish. The first
 match is returned.
 ''')
 
@@ -773,7 +808,7 @@ class BuiltinSwitchIf(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Iterating over values'
     __doc__ = doc = _(
-'''
+r'''
 ``switch_if([test_expression, value_expression,]+ else_expression)`` -- for each
 ``test_expression, value_expression`` pair, checks if ``test_expression`` is
 True (non-empty) and if so returns the result of ``value_expression``. If no
@@ -800,7 +835,7 @@ class BuiltinStrcatMax(BuiltinFormatterFunction):
     arg_count = -1
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``strcat_max(max, string1 [, prefix2, string2]*)`` -- Returns a string formed by
 concatenating the arguments. The returned value is initialized to ``string1``.
 Strings made from ``prefix, string`` pairs are added to the end of the value as
@@ -837,7 +872,7 @@ class BuiltinInList(BuiltinFormatterFunction):
     arg_count = -1
     category = 'List lookup'
     __doc__ = doc = _(
-'''
+r'''
 ``list_contains(value, separator, [ pattern, found_val, ]* not_found_val)`` -- interpret the
 value as a list of items separated by ``separator``, checking the ``pattern``
 against each item in the list. If the ``pattern`` matches an item then return
@@ -873,7 +908,7 @@ class BuiltinStrInList(BuiltinFormatterFunction):
     arg_count = -1
     category = 'List lookup'
     __doc__ = doc = _(
-'''
+r'''
 ``str_in_list(value, separator, [ string, found_val, ]+ not_found_val)`` -- interpret
 the value as a list of items separated by ``separator`` then compare ``string``
 against each value in the list. The ``string`` is not a regular expression. If
@@ -910,7 +945,7 @@ class BuiltinIdentifierInList(BuiltinFormatterFunction):
     arg_count = -1
     category = 'List lookup'
     __doc__ = doc = _(
-'''
+r'''
 ``identifier_in_list(val, id_name [, found_val, not_found_val])`` -- treat
 ``val`` as a list of identifiers separated by commas. An identifier has the
 format ``id_name:value``. The ``id_name`` parameter is the id_name text to
@@ -951,7 +986,7 @@ class BuiltinRe(BuiltinFormatterFunction):
     arg_count = 3
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``re(value, pattern, replacement)`` -- return the value after applying the regular
 expression. All instances of ``pattern`` in the value are replaced with
 ``replacement``. The template language uses case insensitive
@@ -968,16 +1003,17 @@ class BuiltinReGroup(BuiltinFormatterFunction):
     arg_count = -1
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``re_group(value, pattern [, template_for_group]*)`` --  return a string made by
 applying the regular expression pattern to ``value`` and replacing each matched
 instance with the value returned by the corresponding template. In
-`Template Program Mode`, like for the ``template`` and the
+[URL href="https://manual.calibre-ebook.com/template_lang.html#more-complex-programs-in-template-expressions-template-program-mode"]
+Template Program Mode[/URL], like for the ``template`` and the
 ``eval`` functions, you use ``[[`` for ``{`` and ``]]`` for ``}``.
 
 The following example looks for a series with more than one word and uppercases the first word:
 [CODE]
-program: re_group(field('series'), "(\\S* )(.*)", "{$:uppercase()}", "{$}")'}
+program: re_group(field('series'), "(\S* )(.*)", "{$:uppercase()}", "{$}")'}
 [/CODE]
 ''')
 
@@ -1006,7 +1042,7 @@ class BuiltinSwapAroundComma(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``swap_around_comma(value)`` -- given a value of the form ``B, A``, return ``A B``.
 This is most useful for converting names in LN, FN format to FN LN. If there is
 no comma in the value then the function returns the value unchanged.
@@ -1021,7 +1057,7 @@ class BuiltinIfempty(BuiltinFormatterFunction):
     arg_count = 2
     category = 'If-then-else'
     __doc__ = doc = _(
-'''
+r'''
 ``ifempty(value, text if empty)`` -- if the value is not empty then return that value,
 otherwise return ``text if empty``.
 ''')
@@ -1038,7 +1074,7 @@ class BuiltinShorten(BuiltinFormatterFunction):
     arg_count = 4
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``shorten(value, left chars, middle text, right chars)`` -- Return a shortened version
 of the value, consisting of ``left chars`` characters from the beginning of the
 value, followed by ``middle text``, followed by ``right chars`` characters from
@@ -1072,7 +1108,7 @@ class BuiltinCount(BuiltinFormatterFunction):
     aliases = ['count']
 
     __doc__ = doc = _(
-'''
+r'''
 ``list_count(value, separator)`` -- interprets the value as a list of items separated by
 ``separator`` and returns the number of items in the list. Most lists use
 a comma as the separator, but ``authors`` uses an ampersand (&).
@@ -1093,7 +1129,7 @@ class BuiltinListCountMatching(BuiltinFormatterFunction):
     aliases = ['count_matching']
 
     __doc__ = doc = _(
-'''
+r'''
 ``list_count_matching(list, pattern, separator)`` -- interprets ``list`` as a
 list of items separated by ``separator``, returning the number of items in the
 list that match the regular expression ``pattern``.
@@ -1114,7 +1150,7 @@ class BuiltinListitem(BuiltinFormatterFunction):
     arg_count = 3
     category = 'List lookup'
     __doc__ = doc = _(
-'''
+r'''
 ``list_item(value, index, separator)`` -- interpret the value as a list of items
 separated by ``separator``, returning the 'index'th item. The first item is
 number zero. The last item has the index ``-1`` as in
@@ -1139,7 +1175,7 @@ class BuiltinSelect(BuiltinFormatterFunction):
     arg_count = 2
     category = 'List lookup'
     __doc__ = doc = _(
-'''
+r'''
 ``select(value, key)`` -- interpret the value as a comma-separated list of items with
 each item having the form ``id:value`` (the calibre ``identifier`` format). The
 function finds the first pair with the id equal to key and returns the
@@ -1163,7 +1199,7 @@ class BuiltinApproximateFormats(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``approximate_formats()`` -- return a comma-separated list of formats associated
 with the book. Because the list comes from calibre's database instead of the
 file system, there is no guarantee that the list is correct, although it
@@ -1171,8 +1207,8 @@ probably is. Note that resulting format names are always uppercase, as in EPUB.
 The ``approximate_formats()`` function is much faster than the ``formats_...``
 functions.
 
-This function works only in the GUI. If you want to use these values in save-to-
-disk or send-to-device templates then you must make a custom "Column built from
+This function works only in the GUI. If you want to use these values in save-to-disk
+or send-to-device templates then you must make a custom "Column built from
 other columns", use the function in that column's template, and use that
 column's value in your save/send templates.
 ''')
@@ -1192,12 +1228,12 @@ class BuiltinFormatsModtimes(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``formats_modtimes(date_format_string)`` -- return a comma-separated list of
 colon-separated items ``FMT:DATE`` representing modification times for the
 formats of a book. The ``date_format_string`` parameter specifies how the date
-is to be formatted. See the ``format_date()`` function for details. You can use
-the ``select()`` function to get the modification time for a specific format. Note
+is to be formatted. See the :ref:`format_date` function for details. You can use
+the :ref:`select` function to get the modification time for a specific format. Note
 that format names are always uppercase, as in EPUB.
 ''')
 
@@ -1217,7 +1253,7 @@ class BuiltinFormatsSizes(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``formats_sizes()`` -- return a comma-separated list of colon-separated
 ``FMT:SIZE`` items giving the sizes of the formats of a book in bytes. You can
 use the ``select()`` function to get the size for a specific format. Note that
@@ -1237,7 +1273,7 @@ class BuiltinFormatsPaths(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``formats_paths()`` -- return a comma-separated list of colon-separated items
 ``FMT:PATH`` giving the full path to the formats of a book. You can use the
 ``select()`` function to get the path for a specific format. Note that format names
@@ -1257,7 +1293,7 @@ class BuiltinHumanReadable(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Formatting values'
     __doc__ = doc = _(
-'''
+r'''
 ``human_readable(value)`` -- expects the value to be a number and returns a string
 representing that number in KB, MB, GB, etc.
 ''')
@@ -1274,15 +1310,16 @@ class BuiltinFormatNumber(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Formatting values'
     __doc__ = doc = _(
-'''
+r'''
 ``format_number(value, template)`` -- interprets the value as a number and formats that
 number using a Python formatting template such as ``{0:5.2f}`` or ``{0:,d}`` or
 ``${0:5,.2f}``. The formatting template must begin with ``{0:`` and end with
 ``}`` as in the above examples. Exception: you can leave off the leading "{0:"
-and trailing "}" if the format template contains only a format. See the template
-language and the [URL href="https://docs.python.org/3/library/string.html#formatstrings"]
-Python documentation[/URL]
-for more examples. Returns the empty string if formatting fails.
+and trailing "}" if the format template contains only a format. See the
+[URL href="https://manual.calibre-ebook.com/template_lang.html"]
+Template Language[/URL] and the
+[URL href="https://docs.python.org/3/library/string.html#formatstrings"]
+Python[/URL] documentation for more examples. Returns the empty string if formatting fails.
 ''')
 
     def evaluate(self, formatter, kwargs, mi, locals, val, template):
@@ -1312,7 +1349,7 @@ class BuiltinSublist(BuiltinFormatterFunction):
     arg_count = 4
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``sublist(value, start_index, end_index, separator)`` -- interpret the value as a
 list of items separated by ``separator``, returning a new list made from the
 items from ``start_index`` to ``end_index``. The first item is number zero. If
@@ -1321,9 +1358,9 @@ case, an end_index of zero is assumed to be the length of the list.
 
 Examples assuming that the tags column (which is comma-separated) contains "A, B ,C":
 [LIST]
-[*]``{tags:sublist(0,1,\\,)}`` returns "A"
-[*]``{tags:sublist(-1,0,\\,)}`` returns "C"
-[*]``{tags:sublist(0,-1,\\,)}`` returns "A, B"
+[*]``{tags:sublist(0,1,\,)}`` returns "A"
+[*]``{tags:sublist(-1,0,\,)}`` returns "C"
+[*]``{tags:sublist(0,-1,\,)}`` returns "A, B"
 [/LIST]
 ''')
 
@@ -1351,9 +1388,9 @@ class BuiltinSubitems(BuiltinFormatterFunction):
     arg_count = 3
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
-``subitems(value, start_index, end_index)`` -- This function breaks apart lists of tag-
-like hierarchical items such as genres. It interprets the value as a comma-
+r'''
+``subitems(value, start_index, end_index)`` -- This function breaks apart lists of
+tag-like hierarchical items such as genres. It interprets the value as a comma-
 separated list of tag-like items, where each item is a period-separated list. It
 returns a new list made by extracting from each item the components from
 ``start_index`` to ``end_index``, then merging the results back together.
@@ -1409,7 +1446,7 @@ class BuiltinFormatDate(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Formatting values'
     __doc__ = doc = _(
-'''
+r'''
 ``format_date(value, format_string)`` -- format the value, which must be a date
 string, using the format_string, returning a string. It is best if the date is
 in ISO format as using other date formats often causes errors because the actual
@@ -1473,10 +1510,10 @@ class BuiltinFormatDateField(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Formatting values'
     __doc__ = doc = _(
-'''
+r'''
  ``format_date_field(field_name, format_string)`` -- format the value in the
  field ``field_name``, which must be the lookup name of a date field, either
- standard or custom. See ``format_date()`` for the formatting codes. This
+ standard or custom. See :ref:`format_date` for the formatting codes. This
  function is much faster than format_date() and should be used when you are
  formatting the value in a field (column). It is also more reliable because it
  works directly on the underlying date. It can't be used for computed dates or
@@ -1519,7 +1556,7 @@ class BuiltinUppercase(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String case changes'
     __doc__ = doc = _(
-'''
+r'''
 ``uppercase(value)`` -- returns the value in upper case.
 ''')
 
@@ -1532,7 +1569,7 @@ class BuiltinLowercase(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String case changes'
     __doc__ = doc = _(
-'''
+r'''
 ``lowercase(value)`` -- returns the value in lower case.
 ''')
 
@@ -1545,7 +1582,7 @@ class BuiltinTitlecase(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String case changes'
     __doc__ = doc = _(
-'''
+r'''
 ``titlecase(value)`` -- returns the value in title case.
 ''')
 
@@ -1558,7 +1595,7 @@ class BuiltinCapitalize(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String case changes'
     __doc__ = doc = _(
-'''
+r'''
 ``capitalize(value)`` -- returns the value with the first letter in upper case and the rest lower case.
 ''')
 
@@ -1571,7 +1608,7 @@ class BuiltinBooksize(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``booksize()`` -- returns the value of the calibre ``size`` field. Returns '' if the book has no formats.
 
 This function works only in the GUI. If you want to use this value in save-to-disk
@@ -1598,7 +1635,7 @@ class BuiltinOndevice(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``ondevice()`` -- return the string ``'Yes'`` if ``ondevice`` is set, otherwise
 return the empty string. This function works only in the GUI. If you want to use
 this value in save-to-disk or send-to-device templates then you must make a
@@ -1619,7 +1656,7 @@ class BuiltinAnnotationCount(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``annotation_count()`` -- return the total number of annotations of all types
 attached to the current book. This function works only in the GUI.
 ''')
@@ -1634,10 +1671,10 @@ class BuiltinIsMarked(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``is_marked()`` -- check whether the book is `marked` in calibre. If it is then
-return the value of the mark, either ``'true'`` (lower case) or a comma-
-separated list of named marks. Returns ``''`` (the empty string) if the book is
+return the value of the mark, either ``'true'`` (lower case) or a comma-separated
+list of named marks. Returns ``''`` (the empty string) if the book is
 not marked. This function works only in the GUI.
 ''')
 
@@ -1651,7 +1688,7 @@ class BuiltinSeriesSort(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``series_sort()`` -- returns the series sort value.
 ''')
 
@@ -1668,7 +1705,7 @@ class BuiltinHasCover(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``has_cover()`` -- return ``'Yes'`` if the book has a cover, otherwise the empty string.
 ''')
 
@@ -1683,7 +1720,7 @@ class BuiltinFirstNonEmpty(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Iterating over values'
     __doc__ = doc = _(
-'''
+r'''
 ``first_non_empty(value [, value]*)`` -- returns the first ``value`` that is not
 empty. If all values are empty, then the empty string is returned. You can have
 as many values as you want.
@@ -1703,8 +1740,8 @@ class BuiltinAnd(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Boolean'
     __doc__ = doc = _(
-'''
-``and(value [, value]*)`` -- returns the string "1" if all values are not empty,
+r'''
+``and(value [, value]*)`` -- returns the string ``'1'`` if all values are not empty,
 otherwise returns the empty string. You can have as many values as you want. In
 most cases you can use the ``&&`` operator instead of this function.  One reason
 not to replace ``and()`` with ``&&`` is when short-circuiting can change the results
@@ -1726,7 +1763,7 @@ class BuiltinOr(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Boolean'
     __doc__ = doc = _(
-'''
+r'''
 ``or(value [, value]*)`` -- returns the string ``'1'`` if any value is not
 empty, otherwise returns the empty string. You can have as many values as you
 want. This function can usually be replaced by the ``||`` operator. A reason it
@@ -1748,8 +1785,8 @@ class BuiltinNot(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Boolean'
     __doc__ = doc = _(
-'''
-``not(value)`` -- returns the string "1" if the value is empty, otherwise
+r'''
+``not(value)`` -- returns the string ``'1'`` if the value is empty, otherwise
 returns the empty string. This function can usually be replaced with the unary
 not (``!``) operator.
 ''')
@@ -1763,14 +1800,14 @@ class BuiltinListJoin(BuiltinFormatterFunction):
     arg_count = -1
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_join(with_separator, list1, separator1 [, list2, separator2]*)`` --
 return a list made by joining the items in the source lists (``list1`` etc)
 using ``with_separator`` between the items in the result list. Items in each
 source ``list[123...]`` are separated by the associated ``separator[123...]``. A
 list can contain zero values. It can be a field like ``publisher`` that is
-single-valued, effectively a one-item list. Duplicates are removed using a case-
-insensitive comparison. Items are returned in the order they appear in the
+single-valued, effectively a one-item list. Duplicates are removed using a
+case-insensitive comparison. Items are returned in the order they appear in the
 source lists. If items on lists differ only in letter case then the last is
 used. All separators can be more than one character.
 
@@ -1816,10 +1853,10 @@ class BuiltinListUnion(BuiltinFormatterFunction):
     arg_count = 3
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_union(list1, list2, separator)`` -- return a list made by merging the
-items in ``list1`` and ``list2``, removing duplicate items using a case-
-insensitive comparison. If items differ in case, the one in ``list1`` is used.
+items in ``list1`` and ``list2``, removing duplicate items using a case-insensitive
+comparison. If items differ in case, the one in ``list1`` is used.
 The items in ``list1`` and ``list2`` are separated by ``separator``, as are the
 items in the returned list. Aliases: ``merge_lists()``, ``list_union()``
 ''')
@@ -1838,7 +1875,7 @@ class BuiltinRange(BuiltinFormatterFunction):
     arg_count = -1
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``range(start, stop, step, limit)`` -- returns a list of numbers generated by
 looping over the range specified by the parameters start, stop, and step, with a
 maximum length of limit. The first value produced is 'start'. Subsequent values
@@ -1891,7 +1928,7 @@ class BuiltinListRemoveDuplicates(BuiltinFormatterFunction):
     arg_count = 2
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_remove_duplicates(list, separator)`` -- return a list made by removing
 duplicate items in ``list``. If items differ only in case then the last is
 returned. The items in ``list`` are separated by ``separator``, as are the items
@@ -1910,7 +1947,7 @@ class BuiltinListDifference(BuiltinFormatterFunction):
     arg_count = 3
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_difference(list1, list2, separator)`` -- return a list made by removing
 from ``list1`` any item found in ``list2`` using a case-insensitive comparison.
 The items in ``list1`` and ``list2`` are separated by separator, as are the
@@ -1935,7 +1972,7 @@ class BuiltinListIntersection(BuiltinFormatterFunction):
     arg_count = 3
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_intersection(list1, list2, separator)`` -- return a list made by removing
 from ``list1`` any item not found in ``list2``, using a case-insensitive
 comparison. The items in ``list1`` and ``list2`` are separated by separator, as
@@ -1960,7 +1997,7 @@ class BuiltinListSort(BuiltinFormatterFunction):
     arg_count = 3
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_sort(list, direction, separator)`` -- return ``list`` sorted using a
 case-insensitive lexical sort. If ``direction`` is zero (number or character),
 ``list`` is sorted ascending, otherwise descending. The list items are separated
@@ -1979,7 +2016,7 @@ class BuiltinListEquals(BuiltinFormatterFunction):
     arg_count = 6
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_equals(list1, sep1, list2, sep2, yes_val, no_val)`` -- return ``yes_val``
 if ``list1`` and ``list2`` contain the same items, otherwise return ``no_val``.
 The items are determined by splitting each list using the appropriate separator
@@ -2000,7 +2037,7 @@ class BuiltinListRe(BuiltinFormatterFunction):
     arg_count = 4
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_re(src_list, separator, include_re, opt_replace)`` -- Construct a list by
 first separating ``src_list`` into items using the ``separator`` character. For
 each item in the list, check if it matches ``include_re``. If it does then add
@@ -2028,7 +2065,7 @@ class BuiltinListReGroup(BuiltinFormatterFunction):
     arg_count = -1
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_re_group(src_list, separator, include_re, search_re [,template_for_group]*)``
 -- Like list_re except replacements are not optional. It
 uses ``re_group(item, search_re, template ...)`` when doing the replacements.
@@ -2070,7 +2107,7 @@ class BuiltinToday(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Date functions'
     __doc__ = doc = _(
-'''
+r'''
 ``today()`` -- return a date+time string for today (now). This value is designed
 for use in ``format_date`` or ``days_between``, but can be manipulated like any
 other string. The date is in [URL href="https://en.wikipedia.org/wiki/ISO_8601"]ISO[/URL]
@@ -2086,7 +2123,7 @@ class BuiltinDaysBetween(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Date functions'
     __doc__ = doc = _(
-'''
+r'''
 ``days_between(date1, date2)`` -- return the number of days between ``date1``
 and ``date2``. The number is positive if ``date1`` is greater than ``date2``,
 otherwise negative. If either ``date1`` or ``date2`` are not dates, the function
@@ -2112,7 +2149,7 @@ class BuiltinDateArithmetic(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Date functions'
     __doc__ = doc = _(
-'''
+r'''
 ``date_arithmetic(date, calc_spec, fmt)`` -- Calculate a new date from ``date``
 using ``calc_spec``. Return the new date formatted according to optional
 ``fmt``: if not supplied then the result will be in ISO format. The calc_spec is
@@ -2164,15 +2201,15 @@ class BuiltinLanguageStrings(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Get values from metadata'
     __doc__ = doc = _(
-"""
-``language_strings(localize)`` -- return the
+r'''
+``language_strings(lang_codes, localize)`` -- return the
 language names for the language codes
 ([URL href="https://www.loc.gov/standards/iso639-2/php/code_list.php"]
 see here for names and codes[/URL])
-passed in as the value. Example: ``{languages:language_strings()}``.
+passed in ``lang_codes``. Example: ``{languages:language_strings()}``.
 If ``localize`` is zero, return the strings in English. If ``localize`` is not zero,
-return the strings in the language of the current locale. ``Lang_codes`` is a comma-separated list.
-""")
+return the strings in the language of the current locale. ``lang_codes`` is a comma-separated list.
+''')
 
     def evaluate(self, formatter, kwargs, mi, locals, lang_codes, localize):
         retval = []
@@ -2191,11 +2228,11 @@ class BuiltinLanguageCodes(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``language_codes(lang_strings)`` -- return the
 [URL href="https://www.loc.gov/standards/iso639-2/php/code_list.php"]language codes[/URL] for the language
 names passed in ``lang_strings``. The strings must be in the language of the
-current locale. ``Lang_strings`` is a comma-separated list.
+current locale. ``lang_strings`` is a comma-separated list.
 ''')
 
     def evaluate(self, formatter, kwargs, mi, locals, lang_strings):
@@ -2215,7 +2252,7 @@ class BuiltinCurrentLibraryName(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``current_library_name()`` -- return the last name on the path to the current calibre library.
 ''')
 
@@ -2229,7 +2266,7 @@ class BuiltinCurrentLibraryPath(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``current_library_path()`` -- return the full path to the current calibre
 library.
 ''')
@@ -2244,7 +2281,7 @@ class BuiltinFinishFormatting(BuiltinFormatterFunction):
     arg_count = 4
     category = 'Formatting values'
     __doc__ = doc = _(
-'''
+r'''
 ``finish_formatting(val, format, prefix, suffix)`` -- apply the ``format``, ``prefix``, and
 ``suffix`` to a value in the same way as done in a template like
 ``{series_index:05.2f| - |- }``. This function is provided to ease conversion of
@@ -2256,13 +2293,13 @@ program: finish_formatting(field("series_index"), "05.2f", " - ", " - ")
 [/CODE]
 Another example: for the template:
 [CODE]
-{series:re(([^\\s])[^\\s]+(\\s|$),\\1)}{series_index:0>2s| - | - }{title}
+{series:re(([^\s])[^\s]+(\s|$),\1)}{series_index:0>2s| - | - }{title}
 [/CODE]
 use:
 [CODE]
 program:
     strcat(
-        re(field('series'), '([^\\s])[^\\s]+(\\s|$)', '\\1'),
+        re(field('series'), '([^\s])[^\s]+(\s|$)', '\1'),
         finish_formatting(field('series_index'), '0>2s', ' - ', ' - '),
         field('title')
     )
@@ -2280,7 +2317,7 @@ class BuiltinVirtualLibraries(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``virtual_libraries()`` -- return a comma-separated list of Virtual libraries that
 contain this book. This function works only in the GUI. If you want to use these
 values in save-to-disk or send-to-device templates then you must make a custom
@@ -2302,7 +2339,7 @@ class BuiltinCurrentVirtualLibraryName(BuiltinFormatterFunction):
     arg_count = 0
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``current_virtual_library_name()`` -- return the name of the current
 virtual library if there is one, otherwise the empty string. Library name case
 is preserved. Example:
@@ -2320,13 +2357,14 @@ class BuiltinUserCategories(BuiltinFormatterFunction):
     name = 'user_categories'
     arg_count = 0
     category = 'Get values from metadata'
-    __doc__ = doc = _('user_categories() -- return a comma-separated list of '
-                      'the user categories that contain this book. This function '
-                      'works only in the GUI. If you want to use these values '
-                      'in save-to-disk or send-to-device templates then you '
-                      'must make a custom "Column built from other columns", use '
-                      'the function in that column\'s template, and use that '
-                      'column\'s value in your save/send templates')
+    __doc__ = doc = _(
+r'''
+``user_categories()`` -- return a comma-separated list of the user categories that
+contain this book. This function works only in the GUI. If you want to use these
+values in save-to-disk or send-to-device templates then you must make a custom
+`Column built from other columns`, use the function in that column's template,
+and use that column's value in your save/send templates
+''')
 
     def evaluate(self, formatter, kwargs, mi, locals_):
         if hasattr(mi, '_proxy_metadata'):
@@ -2341,12 +2379,11 @@ class BuiltinTransliterate(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``transliterate(value)`` -- Return a string in a latin alphabet formed by
-approximating the sound of the words in the source field. For example, if the
-source field is ``Фёдор Миха́йлович Достоевский`` this function returns ``Fiodor
-Mikhailovich Dostoievskii``.
-''')
+approximating the sound of the words in ``value``. For example, if ``value``
+is ``{0}`` this function returns ``{1}``.
+''').format('Фёдор Миха́йлович Достоевский', 'Fiodor Mikhailovich Dostoievskii')
 
     def evaluate(self, formatter, kwargs, mi, locals, source):
         from calibre.utils.filenames import ascii_text
@@ -2358,7 +2395,7 @@ class BuiltinGetLink(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``get_link(field_name, field_value)`` -- fetch the link for field ``field_name``
 with value ``field_value``. If there is no attached link, return the empty
 string. Examples:
@@ -2401,7 +2438,7 @@ class BuiltinAuthorLinks(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``author_links(val_separator, pair_separator)`` -- returns a string containing a
 list of authors and those authors' link values in the form:
 ``author1 val_separator author1_link pair_separator author2 val_separator author2_link`` etc.
@@ -2432,7 +2469,7 @@ class BuiltinAuthorSorts(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``author_sorts(val_separator)`` -- returns a string containing a list of
 author's sort values for the authors of the book. The sort is the one in the
 author metadata information, which can be different from the author_sort in books. The
@@ -2455,7 +2492,7 @@ class BuiltinConnectedDeviceName(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``connected_device_name(storage_location_key)`` -- if a device is connected then
 return the device name, otherwise return the empty string. Each storage location
 on a device has its own device name. The ``storage_location_key`` names are
@@ -2493,7 +2530,7 @@ class BuiltinConnectedDeviceUUID(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Get values from metadata'
     __doc__ = doc = _(
-'''
+r'''
 ``connected_device_uuid(storage_location_key)`` -- if a device is connected then
 return the device uuid (unique id), otherwise return the empty string. Each
 storage location on a device has a different uuid. The ``storage_location_key``
@@ -2531,10 +2568,10 @@ class BuiltinCheckYesNo(BuiltinFormatterFunction):
     arg_count = 4
     category = 'If-then-else'
     __doc__ = doc = _(
-'''
+r'''
 ``check_yes_no(field_name, is_undefined, is_false, is_true)`` -- checks if the
 value of the yes/no field named by the lookup name ``field_name`` is one of the
-values specified by the parameters, returning ``'yes'`` if a match is found
+values specified by the parameters, returning ``'Yes'`` if a match is found
 otherwise returning the empty string. Set the parameter ``is_undefined``,
 ``is_false``, or ``is_true`` to 1 (the number) to check that condition,
 otherwise set it to 0.
@@ -2568,12 +2605,12 @@ class BuiltinRatingToStars(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Formatting values'
     __doc__ = doc = _(
-'''
+r'''
 ``rating_to_stars(value, use_half_stars)`` -- Returns the value as string of star
-(``★``) characters. The value must be a number between 0 and 5. Set
+(``{}``) characters. The value must be a number between 0 and 5. Set
 use_half_stars to 1 if you want half star characters for fractional numbers
 available with custom ratings columns.
-''')
+''').format('★')
 
     def evaluate(self, formatter, kwargs, mi, locals, value, use_half_stars):
         if not value:
@@ -2594,7 +2631,7 @@ class BuiltinSwapAroundArticles(BuiltinFormatterFunction):
     arg_count = 2
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``swap_around_articles(value, separator)`` -- returns the value with articles moved to
 the end. The value can be a list, in which case each item in the list is
 processed. If the value is a list then you must provide the ``separator``. If no
@@ -2621,7 +2658,7 @@ class BuiltinArguments(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Other'
     __doc__ = doc = _(
-'''
+r'''
 ``arguments(id[=expression] [, id[=expression]]*)`` -- Used in a stored
 template to retrieve the arguments passed in the call. It both declares and
 initializes local variables with the supplied names, the ``id``s, making them
@@ -2642,7 +2679,7 @@ class BuiltinGlobals(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Other'
     __doc__ = doc = _(
-'''
+r'''
 ``globals(id[=expression] [, id[=expression]]*)`` -- Retrieves "global variables"
 that can be passed into the formatter. The name ``id`` is the name of the global
 variable. It both declares and initializes local variables with the names of the
@@ -2661,11 +2698,13 @@ class BuiltinSetGlobals(BuiltinFormatterFunction):
     name = 'set_globals'
     arg_count = -1
     category = 'other'
-    __doc__ = doc = _('set_globals(id[=expression] [, id[=expression]]*) '
-                      '-- Sets "global variables" that can be passed into '
-                      'the formatter. The globals are given the name of the id '
-                      'passed in. The value of the id is used unless an '
-                      'expression is provided.')
+    __doc__ = doc = _(
+r'''
+``set_globals(id[=expression] [, id[=expression]]*)`` -- Sets `global
+variables` that can be passed into the formatter. The globals are given the name
+of the ``id`` passed in. The value of the ``id`` is used unless an expression is
+provided.
+''')
 
     def evaluate(self, formatter, kwargs, mi, locals, *args):
         # The globals function is implemented in-line in the formatter
@@ -2677,7 +2716,7 @@ class BuiltinFieldExists(BuiltinFormatterFunction):
     arg_count = 1
     category = 'If-then-else'
     __doc__ = doc = _(
-'''
+r'''
 ``field_exists(lookup_name)`` -- checks if a field (column) with the lookup name
 ``lookup_name`` exists, returning ``'1'`` if so and the empty string if not.
 ''')
@@ -2693,9 +2732,9 @@ class BuiltinCharacter(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``character(character_name)`` -- returns the character named by character_name.
-For example, ``character('newline')`` returns a newline character (``'\\n'``).
+For example, ``character('newline')`` returns a newline character (``'\n'``).
 The supported character names are ``newline``, ``return``, ``tab``, and
 ``backslash``. This function is used to put these characters into the output
 of templates.
@@ -2711,8 +2750,8 @@ class BuiltinToHex(BuiltinFormatterFunction):
     arg_count = 1
     category = 'String manipulation'
     __doc__ = doc = _(
-'''
-``to_hex(val)`` -- returns the string ``val`` encoded in hex. This is useful
+r'''
+``to_hex(val)`` -- returns the string ``val`` encoded into hex. This is useful
 when constructing calibre URLs.
 ''')
 
@@ -2725,7 +2764,7 @@ class BuiltinUrlsFromIdentifiers(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Formatting values'
     __doc__ = doc = _(
-'''
+r'''
 ``urls_from_identifiers(identifiers, sort_results)`` -- given a comma-separated
 list of ``identifiers``, where an ``identifier`` is a colon-separated pair of
 values (``id_name:id_value``), returns a comma-separated list of HTML URLs
@@ -2762,7 +2801,7 @@ class BuiltinBookCount(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``book_count(query, use_vl)`` -- returns the count of books found by searching
 for ``query``. If ``use_vl`` is ``0`` (zero) then virtual libraries are ignored.
 This function and its companion ``book_values()`` are particularly useful in
@@ -2821,7 +2860,7 @@ class BuiltinBookValues(BuiltinFormatterFunction):
     arg_count = 4
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``book_values(column, query, sep, use_vl)`` -- returns a list of the unique
 values contained in the column ``column`` (a lookup name), separated by ``sep``,
 in the books found by searching for ``query``. If ``use_vl`` is ``0`` (zero)
@@ -2860,13 +2899,13 @@ class BuiltinHasExtraFiles(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``has_extra_files([pattern])`` -- returns the count of extra files, otherwise ''
 (the empty string). If the optional parameter ``pattern`` (a regular expression)
 is supplied then the list is filtered to files that match ``pattern`` before the
 files are counted. The pattern match is case insensitive. See also the functions
-``extra_file_names()``, ``extra_file_size()`` and ``extra_file_modtime()``. This
-function can be used only in the GUI.
+:ref:`extra_file_names`, :ref:`extra_file_size` and :ref:`extra_file_modtime`.
+This function can be used only in the GUI.
 ''')
 
     def evaluate(self, formatter, kwargs, mi, locals, *args):
@@ -2891,13 +2930,13 @@ class BuiltinExtraFileNames(BuiltinFormatterFunction):
     arg_count = -1
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``extra_file_names(sep [, pattern])`` -- returns a ``sep``-separated list of
 extra files in the book's ``data/`` folder. If the optional parameter
 ``pattern``, a regular expression, is supplied then the list is filtered to
 files that match ``pattern``. The pattern match is case insensitive. See also
-the functions ``has_extra_files()``, ``extra_file_modtime()`` and
-``extra_file_size()``. This function can be used only in the GUI.
+the functions :ref:`has_extra_files`, :ref:`extra_file_modtime` and
+:ref:`extra_file_size`. This function can be used only in the GUI.
 ''')
 
     def evaluate(self, formatter, kwargs, mi, locals, sep, *args):
@@ -2922,7 +2961,7 @@ class BuiltinExtraFileSize(BuiltinFormatterFunction):
     arg_count = 1
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``extra_file_size(file_name)`` -- returns the size in bytes of the extra file
 ``file_name`` in the book's ``data/`` folder if it exists, otherwise ``-1``. See
 also the functions ``has_extra_files()``, ``extra_file_names()`` and
@@ -2947,14 +2986,14 @@ class BuiltinExtraFileModtime(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``extra_file_modtime(file_name, format_string)`` -- returns the modification
 time of the extra file ``file_name`` in the book's ``data/`` folder if it
 exists, otherwise ``-1``. The modtime is formatted according to
-``format_string`` (see ``format_date()`` for details). If ``format_string`` is
+``format_string`` (see :ref:`format_date` for details). If ``format_string`` is
 the empty string, returns the modtime as the floating point number of seconds
-since the epoch.  See also the functions ``has_extra_files()``,
-``extra_file_names()`` and ``extra_file_size()``. The epoch is OS dependent.
+since the epoch.  See also the functions :ref:`has_extra_files`,
+:ref:`extra_file_names` and :ref:`extra_file_size`. The epoch is OS dependent.
 This function can be used only in the GUI.
 ''')
 
@@ -2979,7 +3018,7 @@ class BuiltinGetNote(BuiltinFormatterFunction):
     arg_count = 3
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``get_note(field_name, field_value, plain_text)`` -- fetch the note for field
 'field_name' with value 'field_value'. If ``plain_text`` is empty, return the
 note's HTML including images. If ``plain_text`` is ``1`` (or ``'1'``), return the
@@ -3041,7 +3080,7 @@ class BuiltinHasNote(BuiltinFormatterFunction):
     arg_count = 2
     category = 'Template database functions'
     __doc__ = doc = _(
-'''
+r'''
 ``has_note(field_name, field_value)``. This function has two variants:
 [LIST]
 [*]if ``field_value`` is not ``''`` (the empty string) return ``'1'`` if the
@@ -3092,7 +3131,7 @@ class BuiltinIsDarkMode(BuiltinFormatterFunction):
     arg_count = 0
     category = 'other'
     __doc__ = doc = _(
-'''
+r'''
 ``is_dark_mode()`` -- returns ``'1'`` if calibre is running in dark mode, ``''``
 (the empty string) otherwise. This function can be used in advanced color and
 icon rules to choose different colors/icons according to the mode. Example:
@@ -3115,7 +3154,7 @@ class BuiltinFieldListCount(BuiltinFormatterFunction):
     arg_count = 0
     category = 'List manipulation'
     __doc__ = doc = _(
-'''
+r'''
 ``list_count_field(lookup_name)``-- returns the count of items in the field with
 the lookup name ``lookup_name``. The field must be multi-valued such as
 ``authors`` or ``tags``, otherwise the function raises an error. This function

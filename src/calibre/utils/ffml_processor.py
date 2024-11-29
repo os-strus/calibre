@@ -12,16 +12,17 @@ from calibre import prepare_string_for_xml
 
 class NodeKinds(IntEnum):
     DOCUMENT    = -1
-    CODE_TEXT   = -2
-    CODE_BLOCK  = -3
-    URL         = -4
-    BLANK_LINE  = -5
-    TEXT        = -6
-    LIST        = -7
-    END_LIST    = -8
+    BLANK_LINE  = -2
+    CODE_TEXT   = -3
+    CODE_BLOCK  = -4
+    END_LIST    = -5
+    GUI_LABEL   = -6
+    ITALIC_TEXT = -7
+    LIST        = -8
     LIST_ITEM   = -9
-    GUI_LABEL   = -10
-    ITALIC_TEXT = -11
+    REF         = -10
+    TEXT        = -11
+    URL         = -12
 
 
 class Node:
@@ -40,24 +41,16 @@ class Node:
         return self._children
 
     def text(self):
-        return self._text
+        return self._text.replace('\\', '')
 
     def escaped_text(self):
-        return prepare_string_for_xml(self._text) #.replace('<', 'LESS_THAN') #.replace('>', '&gt;')
+        return prepare_string_for_xml(self.text())
 
 
-class DocumentNode(Node):
+class BlankLineNode(Node):
 
     def __init__(self):
-        super().__init__(NodeKinds.DOCUMENT)
-        self._children = []
-
-
-class TextNode(Node):
-
-    def __init__(self, text):
-        super().__init__(NodeKinds.TEXT)
-        self._text = text
+        super().__init__(NodeKinds.BLANK_LINE)
 
 
 class CodeBlock(Node):
@@ -74,10 +67,51 @@ class CodeText(Node):
         self._text = code_text
 
 
-class BlankLineNode(Node):
+class DocumentNode(Node):
 
     def __init__(self):
-        super().__init__(NodeKinds.BLANK_LINE)
+        super().__init__(NodeKinds.DOCUMENT)
+        self._children = []
+
+
+class GuiLabelNode(Node):
+
+    def __init__(self, text):
+        super().__init__(NodeKinds.GUI_LABEL)
+        self._text = text
+
+
+class ItalicTextNode(Node):
+
+    def __init__(self, text):
+        super().__init__(NodeKinds.ITALIC_TEXT)
+        self._text = text
+
+
+class ListItemNode(Node):
+
+    def __init__(self):
+        super().__init__(NodeKinds.LIST_ITEM)
+
+
+class ListNode(Node):
+
+    def __init__(self):
+        super().__init__(NodeKinds.LIST)
+
+
+class RefNode(Node):
+
+    def __init__(self, text):
+        super().__init__(NodeKinds.REF)
+        self._text = text
+
+
+class TextNode(Node):
+
+    def __init__(self, text):
+        super().__init__(NodeKinds.TEXT)
+        self._text = text
 
 
 class UrlNode(Node):
@@ -90,34 +124,14 @@ class UrlNode(Node):
     def label(self):
         return self._label
 
+    def escaped_label(self):
+        return prepare_string_for_xml(self._label)
+
     def url(self):
         return self._url
 
-
-class ListNode(Node):
-
-    def __init__(self):
-        super().__init__(NodeKinds.LIST)
-
-
-class ListItemNode(Node):
-
-    def __init__(self):
-        super().__init__(NodeKinds.LIST_ITEM)
-
-
-class ItalicTextNode(Node):
-
-    def __init__(self, text):
-        super().__init__(NodeKinds.ITALIC_TEXT)
-        self._text = text
-
-
-class GuiLabelNode(Node):
-
-    def __init__(self, text):
-        super().__init__(NodeKinds.GUI_LABEL)
-        self._text = text
+    def escaped_url(self):
+        return prepare_string_for_xml(self._url)
 
 
 
@@ -142,6 +156,15 @@ class FFMLProcessor:
 
     - URLs. The syntax is similar to BBCODE: [URL href="http..."]Link text[/URL].
       Example: [URL href="https://en.wikipedia.org/wiki/ISO_8601"]ISO[/URL]
+
+    - Internal function reference links. These are links to some formatter function
+      documentation. The syntax is the same as guilabel. Example: :ref:`get_note`.
+      The characters '()' are automatically added to the function name when
+      displayed. For HTML it generates the same as the inline program code text
+      operator (``) with no link. Example: :ref:`add` produces <code>add()</code>.
+      For RST it generates a :ref: reference that works only in an RST document
+      containing formatter function documentation. Example: :ref:`get_note`
+      generates :ref:`get_note() <ff_get_note>`
 
     - example program code text blocks. Surround the code block with [CODE]
       and [/CODE] tags. These tags must be first on a line. Example:
@@ -168,8 +191,6 @@ class FFMLProcessor:
       [/LIST]
 
     HTML output contains no CSS and does not start with a tag such as <DIV> or <P>.
-
-    RST output is not indented.
 
     API example: generate documents for all builtin formatter functions
     --------------------
@@ -227,12 +248,13 @@ class FFMLProcessor:
 
         :return:       a parse tree for the document
         """
+        self.input_line = 1
         self.input = doc
         self.input_pos = 0
         self.document_name = name
 
         node = DocumentNode()
-        return self._parse_document(node)
+        return self._parse_document(node) if doc else node
 
     def tree_to_html(self, tree, depth=0):
         """
@@ -247,18 +269,16 @@ class FFMLProcessor:
         result = ''
         if tree.node_kind() == NodeKinds.TEXT:
             result += tree.escaped_text()
+        elif tree.node_kind() == NodeKinds.BLANK_LINE:
+            result += '\n<br>\n<br>\n'
         elif tree.node_kind() == NodeKinds.CODE_TEXT:
             result += f'<code>{tree.escaped_text()}</code>'
         elif tree.node_kind() == NodeKinds.CODE_BLOCK:
             result += f'<pre style="margin-left:2em"><code>{tree.escaped_text()}</code></pre>'
-        elif tree.node_kind() == NodeKinds.ITALIC_TEXT:
-            result += f'<i>{tree.escaped_text()}</i>'
         elif tree.node_kind() == NodeKinds.GUI_LABEL:
             result += f'<span style="font-family: Sans-Serif">{tree.escaped_text()}</span>'
-        elif tree.node_kind() == NodeKinds.BLANK_LINE:
-            result += '\n<br>\n<br>\n'
-        elif tree.node_kind() == NodeKinds.URL:
-            result += f'<a href="{tree.url()}">{tree.label()}</a>'
+        elif tree.node_kind() == NodeKinds.ITALIC_TEXT:
+            result += f'<i>{tree.escaped_text()}</i>'
         elif tree.node_kind() == NodeKinds.LIST:
             result += '\n<ul>\n'
             for child in tree.children():
@@ -266,6 +286,10 @@ class FFMLProcessor:
                 result += self.tree_to_html(child, depth+1)
                 result += '</li>\n'
             result += '</ul>\n'
+        elif tree.node_kind() == NodeKinds.REF:
+            result += f'<code>{tree.escaped_text()}()</code>'
+        elif tree.node_kind() == NodeKinds.URL:
+            result += f'<a href="{tree.escaped_url()}">{tree.escaped_label()}</a>'
         elif tree.node_kind() in (NodeKinds.DOCUMENT, NodeKinds.LIST_ITEM):
             for child in tree.children():
                 result += self.tree_to_html(child, depth+1)
@@ -300,29 +324,20 @@ class FFMLProcessor:
         """
         if result is None:
             result = '  ' * indent
-        if tree.node_kind() == NodeKinds.TEXT:
-            txt = tree.text()
-            if not result:
-                txt = txt.lstrip()
-            elif result.endswith('\n'):
-                txt = txt.lstrip()
-                result += '  ' * indent
-            result += txt
-        elif tree.node_kind() == NodeKinds.CODE_TEXT:
-            result += f'``{tree.text()}``'
-        elif tree.node_kind() == NodeKinds.GUI_LABEL:
-            result += f':guilabel:`{tree.text()}`'
+
+        if tree.node_kind() == NodeKinds.BLANK_LINE:
+            result += '\n\n'
         elif tree.node_kind() == NodeKinds.CODE_BLOCK:
             result += f"\n\n{'  ' * indent}::\n\n"
             for line in tree.text().strip().split('\n'):
                 result += f"{'  ' * (indent+1)}{line}\n"
             result += '\n'
-        elif tree.node_kind() == NodeKinds.BLANK_LINE:
-            result += '\n\n'
+        elif tree.node_kind() == NodeKinds.CODE_TEXT:
+            result += f'``{tree.text()}``'
+        elif tree.node_kind() == NodeKinds.GUI_LABEL:
+            result += f':guilabel:`{tree.text()}`'
         elif tree.node_kind() == NodeKinds.ITALIC_TEXT:
             result += f'`{tree.text()}`'
-        elif tree.node_kind() == NodeKinds.URL:
-            result += f'`{tree.label()} <{tree.url()}>`_'
         elif tree.node_kind() == NodeKinds.LIST:
             result += '\n\n'
             for child in tree.children():
@@ -330,34 +345,58 @@ class FFMLProcessor:
                 result = self.tree_to_rst(child, indent+1, result)
                 result += '\n'
             result += '\n'
+        elif tree.node_kind() == NodeKinds.REF:
+            if (rname := tree.text()).endswith('()'):
+                rname = rname[:-2]
+            result += f':ref:`{rname}() <ff_{rname}>`'
+        elif tree.node_kind() == NodeKinds.TEXT:
+            txt = tree.text()
+            if not result:
+                txt = txt.lstrip()
+            elif result.endswith('\n'):
+                txt = txt.lstrip()
+                result += '  ' * indent
+            result += txt
+        elif tree.node_kind() == NodeKinds.URL:
+            result += f'`{tree.label()} <{tree.url()}>`_'
         elif tree.node_kind() in (NodeKinds.DOCUMENT, NodeKinds.LIST_ITEM):
             for child in tree.children():
                 result = self.tree_to_rst(child, indent, result)
         return result
 
-    def document_to_rst(self, document, name):
+    def document_to_rst(self, document, name, indent=0, prefix=None):
         """
         Given a document in the Formatter Function Markup Language (FFML), return
         that document in RST (sphinx reStructuredText) format.
 
         :param document: the text in FFML.
-        :param name: the name of the document, used during error
-                     processing. It is usually the name of the function.
+        :param name:     the name of the document, used during error
+                         processing. It is usually the name of the function.
+        :param indent:   the indenting level of the items in the tree. This is
+                         usually zero, but can be greater than zero if you want
+                         the RST output indented.
+        :param prefix:   string. if supplied, this string replaces the indent
+                         on the first line of the output. This permits specifying
+                         an RST block, for example a bullet list
 
         :return: a string containing the RST text
 
         """
-        return self.tree_to_rst(self.parse_document(document, name), 0)
+        doc = self.tree_to_rst(self.parse_document(document, name), indent)
+        if prefix is not None:
+            doc = prefix + doc.lstrip('  ' * indent)
+        return doc
 
 # ============== Internal methods =================
 
     keywords = {'``':           NodeKinds.CODE_TEXT, # must be before '`'
                 '`':            NodeKinds.ITALIC_TEXT,
-                ':guilabel:':   NodeKinds.GUI_LABEL,
                 '[CODE]':       NodeKinds.CODE_BLOCK,
-                '[URL':         NodeKinds.URL,
+                ':guilabel:':   NodeKinds.GUI_LABEL,
                 '[LIST]':       NodeKinds.LIST,
                 '[/LIST]':      NodeKinds.END_LIST,
+                ':ref:':        NodeKinds.REF,
+                '[URL':         NodeKinds.URL,
                 '[*]':          NodeKinds.LIST_ITEM,
                 '\n\n':         NodeKinds.BLANK_LINE
             }
@@ -366,13 +405,16 @@ class FFMLProcessor:
         self.document = DocumentNode()
         self.input = None
         self.input_pos = 0
-        self.input_line = 1
 
     def error(self, message):
         raise ValueError(f'{message} on line {self.input_line} in "{self.document_name}"')
 
     def find(self, for_what):
         p = self.input.find(for_what, self.input_pos)
+        if p < 0:
+            return -1
+        while p > 0 and self.input[p-1] == '\\':
+            p = self.input.find(for_what, p+1)
         return -1 if p < 0 else p - self.input_pos
 
     def move_pos(self, to_where):
@@ -411,6 +453,19 @@ class FFMLProcessor:
             return min(positions)
         return len(self.input)
 
+    def get_code_block(self):
+        self.move_pos(len('[CODE]'))
+        if self.text_to(1) == '\n':
+            self.move_pos(1)
+        end = self.find('[/CODE]')
+        if end < 0:
+            self.error('Missing [/CODE] for block')
+        node = CodeBlock(self.text_to(end))
+        self.move_pos(end + len('[/CODE]'))
+        if self.text_to(1) == '\n':
+            self.move_pos(1)
+        return node
+
     def get_code_text(self):
         self.move_pos(len('``'))
         end = self.find('``')
@@ -420,13 +475,9 @@ class FFMLProcessor:
         self.move_pos(end + len('``'))
         return node
 
-    def get_italic_text(self):
+    def get_escaped_char(self):
+        node = EscapedCharNode(self.text_to(1))
         self.move_pos(1)
-        end = self.find('`')
-        if end < 0:
-            self.error('Missing closing "`" for italics')
-        node = ItalicTextNode(self.text_to(end))
-        self.move_pos(end + 1)
         return node
 
     def get_gui_label(self):
@@ -438,15 +489,13 @@ class FFMLProcessor:
         self.move_pos(end + len('`'))
         return node
 
-    def get_code_block(self):
-        self.move_pos(len('[CODE]\n'))
-        end = self.find('[/CODE]')
+    def get_italic_text(self):
+        self.move_pos(1)
+        end = self.find('`')
         if end < 0:
-            self.error('Missing [/CODE] for block')
-        node = CodeBlock(self.text_to(end))
-        self.move_pos(end + len('[/CODE]'))
-        if self.text_to(1) == '\n':
-            self.move_pos(1)
+            self.error('Missing closing "`" for italics')
+        node = ItalicTextNode(self.text_to(end))
+        self.move_pos(end + 1)
         return node
 
     def get_list(self):
@@ -464,6 +513,15 @@ class FFMLProcessor:
         if self.text_to(1) == '\n':
             self.move_pos(1)
         return list_node
+
+    def get_ref(self):
+        self.move_pos(len(':ref:`'))
+        end = self.find('`')
+        if end < 0:
+            self.error('Missing ` (backquote) for :ref:')
+        node = RefNode(self.text_to_no_newline(end, 'REF (:ref:`)'))
+        self.move_pos(end + len('`'))
+        return node
 
     def get_url(self):
         self.move_pos(len('[URL'))
@@ -492,27 +550,29 @@ class FFMLProcessor:
                 txt = self.text_to(p).replace('\n', ' ')
                 parent.add_child(TextNode(txt))
                 self.move_pos(p)
+            elif p == NodeKinds.BLANK_LINE:
+                parent.add_child(BlankLineNode())
+                self.move_pos(2)
             elif p == NodeKinds.CODE_TEXT:
                 parent.add_child(self.get_code_text())
             elif p == NodeKinds.CODE_BLOCK:
                 parent.add_child(self.get_code_block())
+            elif p == NodeKinds.GUI_LABEL:
+                parent.add_child(self.get_gui_label())
+            elif p == NodeKinds.ITALIC_TEXT:
+                parent.add_child(self.get_italic_text())
             elif p == NodeKinds.LIST:
                 parent.add_child(self.get_list())
             elif p == NodeKinds.LIST_ITEM:
                 return parent
             elif p == NodeKinds.END_LIST:
                 return parent
-            elif p == NodeKinds.BLANK_LINE:
-                parent.add_child(BlankLineNode())
-                self.move_pos(2)
-            elif p == NodeKinds.ITALIC_TEXT:
-                parent.add_child(self.get_italic_text())
-            elif p == NodeKinds.GUI_LABEL:
-                parent.add_child(self.get_gui_label())
+            elif p == NodeKinds.REF:
+                parent.add_child(self.get_ref())
             elif p == NodeKinds.URL:
                 parent.add_child(self.get_url())
             else:
-                self.move_pos(p+1)
+                self.error(f'Fatal parse error with node type {p}')
             if self.at_end():
                 break
         return parent
