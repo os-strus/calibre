@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -32,7 +31,7 @@ class DemoTool(Tool):
     def create_action(self, for_toolbar=True):
         # Create an action, this will be added to the plugins toolbar and
         # the plugins menu
-        ac = QAction(get_icons('images/icon.png'), 'Magnify fonts', self.gui)  # noqa
+        ac = QAction(get_icons('images/icon.png'), 'Magnify fonts', self.gui)  # noqa: F821
         if not for_toolbar:
             # Register a keyboard shortcut for this toolbar action. We only
             # register it for the action created for the menu, not the toolbar,

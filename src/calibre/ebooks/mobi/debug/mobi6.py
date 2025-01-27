@@ -32,7 +32,7 @@ class TagX:  # {{{
     def __repr__(self):
         return 'TAGX(tag=%02d, num_values=%d, bitmask=%r, eof=%d)' % (self.tag,
                 self.num_values, bin(self.bitmask), self.eof)
-    # }}}
+# }}}
 
 
 class SecondaryIndexHeader:  # {{{
@@ -124,7 +124,7 @@ class SecondaryIndexHeader:  # {{{
         a('Control byte count: %d'%self.tagx_control_byte_count)
         for i in self.tagx_entries:
             a('\t' + repr(i))
-        a('Index of last IndexEntry in secondary index record: %s'% self.last_entry)
+        a(f'Index of last IndexEntry in secondary index record: {self.last_entry}')
         a('Number of entries in the NCX: %d'% self.ncx_count)
 
         return '\n'.join(ans)
@@ -212,7 +212,7 @@ class IndexHeader:  # {{{
         a('Number of index records: %d'%self.index_count)
         a('Index encoding: %s (%d)'%(self.index_encoding,
                 self.index_encoding_num))
-        a('Unknown (possibly language?): %r'%(self.possibly_language))
+        a(f'Unknown (possibly language?): {self.possibly_language!r}')
         a('Number of index entries: %d'% self.num_index_entries)
         a('ORDT start: %d'%self.ordt_start)
         a('LIGT start: %d'%self.ligt_start)
@@ -227,11 +227,11 @@ class IndexHeader:  # {{{
         a('Control byte count: %d'%self.tagx_control_byte_count)
         for i in self.tagx_entries:
             a('\t' + repr(i))
-        a('Index of last IndexEntry in primary index record: %s'% self.last_entry)
+        a(f'Index of last IndexEntry in primary index record: {self.last_entry}')
         a('Number of entries in the NCX: %d'% self.ncx_count)
 
         return '\n'.join(ans)
-    # }}}
+# }}}
 
 
 class Tag:  # {{{
@@ -242,12 +242,12 @@ class Tag:  # {{{
     '''
 
     TAG_MAP = {
-            1: ('offset', 'Offset in HTML'),
-            2: ('size', 'Size in HTML'),
-            3: ('label_offset', 'Label offset in CNCX'),
-            4: ('depth', 'Depth of this entry in TOC'),
-            5: ('class_offset', 'Class offset in CNCX'),
-            6: ('pos_fid', 'File Index'),
+            1 : ('offset', 'Offset in HTML'),
+            2 : ('size', 'Size in HTML'),
+            3 : ('label_offset', 'Label offset in CNCX'),
+            4 : ('depth', 'Depth of this entry in TOC'),
+            5 : ('class_offset', 'Class offset in CNCX'),
+            6 : ('pos_fid', 'File Index'),
 
             11: ('secondary', '[unknown, unknown, '
                 'tag type from TAGX in primary index header]'),
@@ -256,14 +256,14 @@ class Tag:  # {{{
             22: ('first_child_index', 'First child'),
             23: ('last_child_index', 'Last child'),
 
-            69 : ('image_index', 'Offset from first image record to the'
+            69: ('image_index', 'Offset from first image record to the'
                                 ' image record associated with this entry'
                                 ' (masthead for periodical or thumbnail for'
                                 ' article entry).'),
-            70 : ('desc_offset', 'Description offset in cncx'),
-            71 : ('author_offset', 'Author offset in cncx'),
-            72 : ('image_caption_offset', 'Image caption offset in cncx'),
-            73 : ('image_attr_offset', 'Image attribution offset in cncx'),
+            70: ('desc_offset', 'Description offset in cncx'),
+            71: ('author_offset', 'Author offset in cncx'),
+            72: ('image_caption_offset', 'Image caption offset in cncx'),
+            73: ('image_attr_offset', 'Image attribution offset in cncx'),
 
     }
 
@@ -274,7 +274,7 @@ class Tag:  # {{{
         if tag_type in self.TAG_MAP:
             self.attr, self.desc = self.TAG_MAP[tag_type]
         else:
-            print('Unknown tag value: %%s'%tag_type)
+            print('Unknown tag value: %s')
             self.desc = '??Unknown (tag value: %d)'%tag_type
             self.attr = 'unknown'
 
@@ -283,8 +283,8 @@ class Tag:  # {{{
 
     def __str__(self):
         if self.cncx_value is not None:
-            return '%s : %r [%r]'%(self.desc, self.value, self.cncx_value)
-        return '%s : %r'%(self.desc, self.value)
+            return f'{self.desc} : {self.value!r} [{self.cncx_value!r}]'
+        return f'{self.desc} : {self.value!r}'
 
 # }}}
 
@@ -405,7 +405,7 @@ class IndexRecord:  # {{{
 
     def get_parent(self, index):
         if index.depth < 1:
-            return None
+            return
         parent_depth = index.depth - 1
         for p in self.indices:
             if p.depth != parent_depth:
@@ -423,11 +423,11 @@ class IndexRecord:  # {{{
             a(str(entry))
             t = self.alltext
             if offset is not None and self.alltext is not None:
-                a('\tHTML before offset: %r'%t[offset-50:offset])
-                a('\tHTML after offset: %r'%t[offset:offset+50])
+                a(f'\tHTML before offset: {t[offset-50:offset]!r}')
+                a(f'\tHTML after offset: {t[offset:offset+50]!r}')
                 p = offset+entry.size
-                a('\tHTML before end: %r'%t[p-50:p])
-                a('\tHTML after end: %r'%t[p:p+50])
+                a(f'\tHTML before end: {t[p-50:p]!r}')
+                a(f'\tHTML after end: {t[p:p+50]!r}')
 
             a('')
 
@@ -475,8 +475,8 @@ class CNCX:  # {{{
             ans.append('%10d : %s'%(k, v))
         return '\n'.join(ans)
 
-
 # }}}
+
 
 class ImageRecord:  # {{{
 
@@ -520,11 +520,11 @@ class FontRecord:  # {{{
         name = '%06d'%idx
         self.font = read_font_record(self.raw)
         if self.font['err']:
-            raise ValueError('Failed to read font record: %s Headers: %s'%(
+            raise ValueError('Failed to read font record: {} Headers: {}'.format(
                 self.font['err'], self.font['headers']))
         self.payload = (self.font['font_data'] if self.font['font_data'] else
                 self.font['raw_data'])
-        self.name = '%s.%s'%(name, self.font['ext'])
+        self.name = '{}.{}'.format(name, self.font['ext'])
 
     def dump(self, folder):
         with open(os.path.join(folder, self.name), 'wb') as f:
@@ -593,10 +593,10 @@ class TBSIndexing:  # {{{
             '(%d ends, %d complete, %d starts)')%tuple(map(len, (s+e+c, e,
                 c, s))))
         byts = bytearray(r.trailing_data.get('indexing', b''))
-        ans.append('TBS bytes: %s'%format_bytes(byts))
+        ans.append(f'TBS bytes: {format_bytes(byts)}')
         for typ, entries in (('Ends', e), ('Complete', c), ('Starts', s)):
             if entries:
-                ans.append('\t%s:'%typ)
+                ans.append(f'\t{typ}:')
                 for x in entries:
                     ans.append(('\t\tIndex Entry: %s (Parent index: %s, '
                             'Depth: %d, Offset: %d, Size: %d) [%s]')%(
@@ -618,7 +618,7 @@ class TBSIndexing:  # {{{
                 tbs_type |= k
             ans.append('\nTBS: %d (%s)'%(tbs_type, bin4(tbs_type)))
             ans.append('Outermost index: %d'%outermost_index)
-            ans.append('Unknown extra start bytes: %s'%repr_extra(extra))
+            ans.append(f'Unknown extra start bytes: {repr_extra(extra)}')
             if is_periodical:  # Hierarchical periodical
                 try:
                     byts, a = self.interpret_periodical(tbs_type, byts,
@@ -631,7 +631,7 @@ class TBSIndexing:  # {{{
                 ans += a
             if byts:
                 sbyts = tuple(hex(b)[2:] for b in byts)
-                ans.append('Remaining bytes: %s'%' '.join(sbyts))
+                ans.append('Remaining bytes: {}'.format(' '.join(sbyts)))
 
         ans.append('')
         return tbs_type, ans
@@ -653,7 +653,7 @@ class TBSIndexing:  # {{{
                 if extra.get(0b1000, None) is not None:
                     if len(extra) > 1:
                         raise ValueError('Dont know how to interpret flags'
-                                ' %r while reading section transitions'%extra)
+                                f' {extra!r} while reading section transitions')
                     nsi = self.get_index(psi.index+1)
                     ans.append('Last article in this record of section %d'
                             ' (relative to next section index [%d]): '
@@ -692,11 +692,11 @@ class TBSIndexing:  # {{{
             si, extra, consumed = decode_tbs(byts)
             byts = byts[consumed:]
             if len(extra) > 1 or 0b0010 in extra or 0b1000 in extra:
-                raise ValueError('Dont know how to interpret flags %r'
-                        ' when reading starting section'%extra)
+                raise ValueError(f'Dont know how to interpret flags {extra!r}'
+                        ' when reading starting section')
             si = self.get_index(si)
             ans.append('The section at the start of this record is:'
-                    ' %s'%si.index)
+                    f' {si.index}')
             if 0b0100 in extra:
                 num = extra[0b0100]
                 ans.append('The number of articles from the section %d'
@@ -704,10 +704,10 @@ class TBSIndexing:  # {{{
             elif 0b0001 in extra:
                 eof = extra[0b0001]
                 if eof != 0:
-                    raise ValueError('Unknown eof value %s when reading'
-                            ' starting section. All bytes: %r'%(eof, orig))
+                    raise ValueError(f'Unknown eof value {eof} when reading'
+                            f' starting section. All bytes: {orig!r}')
                 ans.append('??This record has more than one article from '
-                        ' the section: %s'%si.index)
+                        f' the section: {si.index}')
             return si, byts
         # }}}
 
@@ -843,6 +843,5 @@ def inspect_mobi(mobi_file, ddir):
         os.mkdir(tdir)
         for rec in getattr(f, attr):
             rec.dump(tdir)
-
 
 # }}}

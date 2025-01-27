@@ -25,18 +25,18 @@ from calibre.utils.resources import get_path as P
 class Sfnt:
 
     TABLE_MAP = {
-        b'head' : HeadTable,
-        b'hhea' : HorizontalHeader,
-        b'vhea' : VerticalHeader,
-        b'maxp' : MaxpTable,
-        b'loca' : LocaTable,
-        b'glyf' : GlyfTable,
-        b'cmap' : CmapTable,
-        b'CFF ' : CFFTable,
-        b'kern' : KernTable,
-        b'GSUB' : GSUBTable,
-        b'OS/2' : OS2Table,
-        b'post' : PostTable,
+        b'head': HeadTable,
+        b'hhea': HorizontalHeader,
+        b'vhea': VerticalHeader,
+        b'maxp': MaxpTable,
+        b'loca': LocaTable,
+        b'glyf': GlyfTable,
+        b'cmap': CmapTable,
+        b'CFF ': CFFTable,
+        b'kern': KernTable,
+        b'GSUB': GSUBTable,
+        b'OS/2': OS2Table,
+        b'post': PostTable,
     }
 
     def __init__(self, raw_or_get_table):
@@ -46,7 +46,7 @@ class Sfnt:
             self.sfnt_version = raw[:4]
             if self.sfnt_version not in {b'\x00\x01\x00\x00', b'OTTO', b'true',
                     b'type1'}:
-                raise UnsupportedFont('Font has unknown sfnt version: %r'%self.sfnt_version)
+                raise UnsupportedFont(f'Font has unknown sfnt version: {self.sfnt_version!r}')
             for table_tag, table, table_index, table_offset, table_checksum in get_tables(raw):
                 self.tables[table_tag] = self.TABLE_MAP.get(
                     table_tag, UnknownTable)(table)
@@ -87,7 +87,7 @@ class Sfnt:
         #     b'hmtx', b'LTSH', b'VDMX', b'hdmx', b'cmap', b'fpgm', b'prep',
         #     b'cvt ', b'loca', b'glyf', b'CFF ', b'kern', b'name', b'post',
         #     b'gasp', b'PCLT', b'DSIG'))}
-        # keys.sort(key=lambda x:order.get(x, 1000))
+        # keys.sort(key=lambda x: order.get(x, 1000))
         # for x in keys:
         #     yield x
 

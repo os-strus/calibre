@@ -424,8 +424,8 @@ def mobify_image(data):
         data = png_data_to_gif_data(data)
     return data
 
-# Font records {{{
 
+# Font records {{{
 
 def read_font_record(data, extent=1040):
     '''
@@ -488,7 +488,7 @@ def read_font_record(data, extent=1040):
         try:
             font_data = zlib.decompress(font_data)
         except Exception as e:
-            ans['err'] = 'Failed to zlib decompress font data (%s)'%e
+            ans['err'] = f'Failed to zlib decompress font data ({e})'
             return ans
 
         if len(font_data) != usize:
@@ -647,4 +647,4 @@ def convert_color_for_font_tag(val):
     def clamp(x):
         return min(x, max(0, x), 1)
     rgb = map(clamp, rgba[:3])
-    return '#' + ''.join(map(lambda x:'%02x' % int(x * 255), rgb))
+    return '#' + ''.join(f'{int(x * 255):02x}' for x in rgb)

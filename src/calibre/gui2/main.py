@@ -73,7 +73,7 @@ def find_portable_library():
         return
     import glob
     candidates = [os.path.basename(os.path.dirname(x)) for x in glob.glob(
-        os.path.join(base, '*%smetadata.db'%os.sep))]
+        os.path.join(base, f'*{os.sep}metadata.db'))]
     if not candidates:
         candidates = ['Calibre Library']
     lp = prefs['library_path']
@@ -92,7 +92,7 @@ def find_portable_library():
 
     if len(lib) > 74:
         error_dialog(None, _('Path too long'),
-            _("Path to Calibre Portable (%s) "
+            _('Path to Calibre Portable (%s) '
                 'too long. It must be less than 59 characters.')%base, show=True)
         raise AbortInit()
 
@@ -433,7 +433,7 @@ def run_gui_(opts, args, app, gui_debug=None):
             winutil.prepare_for_restart()
             with open(debugfile, 'r+b') as f:
                 raw = f.read()
-                raw = re.sub(b'(?<!\r)\n', b'\r\n', raw)
+                raw = re.sub(br'(?<!\r)\n', b'\r\n', raw)
                 f.seek(0)
                 f.truncate()
                 f.write(raw)
@@ -575,7 +575,7 @@ if __name__ == '__main__':
             with open(logfile) as f:
                 log = f.read().decode('utf-8', 'ignore')
             d = QErrorMessage()
-            d.showMessage(('<b>Error:</b>%s<br><b>Traceback:</b><br>'
-                '%s<b>Log:</b><br>%s')%(str(err),
+            d.showMessage(('<b>Error:</b>{}<br><b>Traceback:</b><br>'
+                '{}<b>Log:</b><br>{}').format(str(err),
                     str(tb).replace('\n', '<br>'),
                     log.replace('\n', '<br>')))
