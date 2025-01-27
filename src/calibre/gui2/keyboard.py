@@ -98,8 +98,8 @@ def finalize(shortcuts, custom_keys_map={}):  # {{{
             x = str(ks.toString(QKeySequence.SequenceFormat.PortableText))
             if x in seen:
                 if DEBUG:
-                    prints('Key %r for shortcut %s is already used by'
-                            ' %s, ignoring'%(x, shortcut['name'], seen[x]['name']))
+                    prints('Key {!r} for shortcut {} is already used by'
+                            ' {}, ignoring'.format(x, shortcut['name'], seen[x]['name']))
                 keys_map[unique_name] = ()
                 continue
             seen[x] = shortcut
@@ -110,12 +110,11 @@ def finalize(shortcuts, custom_keys_map={}):  # {{{
         ac = shortcut['action']
         if ac is None or sip.isdeleted(ac):
             if ac is not None and DEBUG:
-                prints('Shortcut %r has a deleted action' % unique_name)
+                prints(f'Shortcut {unique_name!r} has a deleted action')
             continue
         ac.setShortcuts(list(keys))
 
     return keys_map
-
 # }}}
 
 
@@ -156,8 +155,7 @@ class Manager(QObject):  # {{{
         '''
         if unique_name in self.shortcuts:
             name = self.shortcuts[unique_name]['name']
-            raise NameConflict('Shortcut for %r already registered by %s'%(
-                    unique_name, name))
+            raise NameConflict(f'Shortcut for {unique_name!r} already registered by {name}')
         shortcut = {'name':name, 'desc':description, 'action': action,
                 'default_keys':tuple(default_keys),
                 'persist_shortcut':persist_shortcut}
@@ -194,8 +192,8 @@ class Manager(QObject):  # {{{
 
 # }}}
 
-# Model {{{
 
+# Model {{{
 
 class Node:
 
@@ -318,10 +316,8 @@ class ConfigModel(SearchQueryParser, QAbstractItemModel):
             sc = node.data
             un = sc['unique_name']
             if sc['set_to_default']:
-                if un in kmap:
-                    del kmap[un]
-                if un in options_map:
-                    del options_map[un]
+                kmap.pop(un, None)
+                options_map.pop(un, None)
             else:
                 if sc['persist_shortcut']:
                     options_map[un] = options_map.get(un, {})
@@ -462,13 +458,13 @@ class Editor(QFrame):  # {{{
 
         self.done_button = doneb = QPushButton(_('Done'), self)
         l.addWidget(doneb, 0, 2, 1, 1)
-        doneb.clicked.connect(lambda : self.editing_done.emit(self))
+        doneb.clicked.connect(lambda: self.editing_done.emit(self))
         l.setColumnStretch(0, 100)
 
         self.custom_toggled(False)
 
     def initialize(self, shortcut, all_shortcuts):
-        self.header.setText('<b>%s: %s</b>'%(_('Customize'), shortcut['name']))
+        self.header.setText('<b>{}: {}</b>'.format(_('Customize'), shortcut['name']))
         self.all_shortcuts = all_shortcuts
         self.shortcut = shortcut
 
@@ -569,8 +565,8 @@ class Editor(QFrame):  # {{{
                 ans.append(ks)
         return tuple(ans)
 
-
 # }}}
+
 
 class Delegate(QStyledItemDelegate):  # {{{
 
@@ -593,12 +589,12 @@ class Delegate(QStyledItemDelegate):  # {{{
                 keys = _('None')
             else:
                 keys = ', '.join(keys)
-            html = '<b>%s</b><br>%s: %s'%(
+            html = '<b>{}</b><br>{}: {}'.format(
                 prepare_string_for_xml(shortcut['name']), _('Shortcuts'), prepare_string_for_xml(keys))
         else:
             # Group
             html = data.data
-        doc =  QTextDocument()
+        doc = QTextDocument()
         doc.setHtml(html)
         return doc
 

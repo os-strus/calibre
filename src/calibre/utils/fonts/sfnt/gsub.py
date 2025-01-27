@@ -62,7 +62,7 @@ class LigatureSubstitution(UnknownLookupSubTable):
     def read_ligature(self, data):
         lig_glyph, count = data.unpack('HH')
         components = data.unpack('%dH'%(count-1), single_special=False)
-        return (lig_glyph, components)
+        return lig_glyph, components
 
     def all_substitutions(self, glyph_ids):
         gid_index_map = self.coverage.coverage_indices(glyph_ids)
@@ -163,8 +163,7 @@ class GSUBTable(UnknownTable):
         (self._version, self.scriptlist_offset, self.featurelist_offset,
                 self.lookuplist_offset) = unpack_from(b'>L3H', self.raw)
         if self._version != 0x10000:
-            raise UnsupportedFont('The GSUB table has unknown version: 0x%x'%
-                    self._version)
+            raise UnsupportedFont(f'The GSUB table has unknown version: 0x{self._version:x}')
 
         self.script_list_table = ScriptListTable(self.raw,
                 self.scriptlist_offset)

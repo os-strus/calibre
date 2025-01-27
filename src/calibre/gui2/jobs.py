@@ -74,7 +74,7 @@ class JobManager(QAbstractTableModel, AdaptSQP):  # {{{
     job_done  = pyqtSignal(int)
 
     def __init__(self):
-        self.header_titles = _('Job'), _('Status'), _('Progress'), _('Running time'), _('Start time'),
+        self.header_titles = _('Job'), _('Status'), _('Progress'), _('Running time'), _('Start time')
         QAbstractTableModel.__init__(self)
         SearchQueryParser.__init__(self, ['all'])
 
@@ -122,7 +122,7 @@ class JobManager(QAbstractTableModel, AdaptSQP):  # {{{
             if not desc:
                 desc = _('Unknown job')
             p = 100. if job.is_finished else job.percent
-            lines.append('%s:  %.0f%% done'%(desc, p))
+            lines.append(f'{desc}:  {p:.0f}% done')
         l = ngettext('There is a waiting job', 'There are {} waiting jobs', len(waiting_jobs)).format(len(waiting_jobs))
         lines.extend(['', l])
         for job in waiting_jobs:
@@ -417,8 +417,8 @@ class FilterModel(QSortFilterProxyModel):  # {{{
 
 # }}}
 
-# Jobs UI {{{
 
+# Jobs UI {{{
 
 class ProgressBarDelegate(QAbstractItemDelegate):  # {{{
 
@@ -488,7 +488,7 @@ class DetailView(Dialog):  # {{{
             if len(html) > self.next_pos:
                 self.next_pos = len(html)
                 self.tb.setHtml(
-                    '<pre style="font-family:monospace">%s</pre>'%html)
+                    f'<pre style="font-family:monospace">{html}</pre>')
         else:
             f = self.job.log_file
             f.seek(self.next_pos)
@@ -732,8 +732,7 @@ class JobsDialog(QDialog, Ui_JobsDialog):
         self.proxy_model.beginResetModel(), self.proxy_model.endResetModel()
 
     def hide_all(self, *args):
-        self.model.hide_jobs(list(range(0,
-            self.model.rowCount(QModelIndex()))))
+        self.model.hide_jobs(list(range(self.model.rowCount(QModelIndex()))))
         self.proxy_model.beginResetModel(), self.proxy_model.endResetModel()
 
     def show_hidden(self, *args):

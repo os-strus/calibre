@@ -65,19 +65,16 @@ class WritingTest(BaseTest):
                 if test.name.endswith('_index'):
                     val = float(val) if val is not None else 1.0
                     self.assertEqual(sqlite_res, val,
-                        'Failed setting for %s with value %r, sqlite value not the same. val: %r != sqlite_val: %r'%(
-                            test.name, val, val, sqlite_res))
+                        f'Failed setting for {test.name} with value {val!r}, sqlite value not the same. val: {val!r} != sqlite_val: {sqlite_res!r}')
                 else:
                     test.setter(db)(1, val)
                     old_cached_res = getter(1)
                     self.assertEqual(old_cached_res, cached_res,
-                                    'Failed setting for %s with value %r, cached value not the same. Old: %r != New: %r'%(
-                            test.name, val, old_cached_res, cached_res))
+                        f'Failed setting for {test.name} with value {val!r}, cached value not the same. Old: {old_cached_res!r} != New: {cached_res!r}')
                     db.refresh()
                     old_sqlite_res = getter(1)
                     self.assertEqual(old_sqlite_res, sqlite_res,
-                        'Failed setting for %s, sqlite value not the same: %r != %r'%(
-                            test.name, old_sqlite_res, sqlite_res))
+                        f'Failed setting for {test.name}, sqlite value not the same: {old_sqlite_res!r} != {sqlite_res!r}')
                 del db
     # }}}
 
@@ -755,7 +752,7 @@ class WritingTest(BaseTest):
             self.assertEqual(ldata, {aid:d['link'] for aid, d in iteritems(c.author_data())})
         self.assertEqual({3}, cache.set_link_for_authors({aid:'xxx' if aid == max(adata) else str(aid) for aid in adata}),
                          'Setting the author link to the same value as before, incorrectly marked some books as dirty')
-        sdata = {aid:'%s, changed' % aid for aid in adata}
+        sdata = {aid:f'{aid}, changed' for aid in adata}
         self.assertEqual({1,2,3}, cache.set_sort_for_authors(sdata))
         for bid in (1, 2, 3):
             self.assertIn(', changed', cache.field_for('author_sort', bid))
@@ -790,7 +787,7 @@ class WritingTest(BaseTest):
             self.assertNotIn(uid, t.id_map)
             self.assertNotIn(uid, t.col_book_map)
             for bid in (1, 2, 3):
-                ae(c.field_for('publisher', bid), "mūs")
+                ae(c.field_for('publisher', bid), 'mūs')
             c.close()
 
         cache = self.init_cache()
@@ -829,7 +826,7 @@ class WritingTest(BaseTest):
         changes = []
         cache.backend.conn.setupdatehook(lambda typ, dbname, tblname, rowid: changes.append(rowid))
         prefs = cache.backend.prefs
-        prefs['test mutable'] =  [1, 2, 3]
+        prefs['test mutable'] = [1, 2, 3]
         self.assertEqual(len(changes), 1)
         a = prefs['test mutable']
         a.append(4)
@@ -920,7 +917,6 @@ class WritingTest(BaseTest):
         cache.restore_annotations(1, list(opf.read_annotations()))
         amap = cache.annotations_map_for_book(1, 'moo')
         self.assertEqual([x[0] for x in annot_list], map_as_list(amap))
-
     # }}}
 
     def test_changed_events(self):  # {{{
@@ -1019,30 +1015,29 @@ class WritingTest(BaseTest):
         cache.set_field('publisher', {1:'random'})
         cache.set_link_map('publisher', {'random': 'url2'})
         links = cache.get_all_link_maps_for_book(1)
-        self.assertSetEqual({v for v in links.keys()}, {'tags', 'publisher'}, 'Wrong link keys')
-        self.assertSetEqual({v for v in links['tags'].keys()}, {'foo', }, 'Should be "foo"')
-        self.assertSetEqual({v for v in links['publisher'].keys()}, {'random', }, 'Should be "random"')
+        self.assertSetEqual(set(links.keys()), {'tags', 'publisher'}, 'Wrong link keys')
+        self.assertSetEqual(set(links['tags'].keys()), {'foo', }, 'Should be "foo"')
+        self.assertSetEqual(set(links['publisher'].keys()), {'random', }, 'Should be "random"')
         self.assertEqual('url', links['tags']['foo'], 'link for tag foo is wrong')
         self.assertEqual('url2', links['publisher']['random'], 'link for publisher random is wrong')
 
         # Check that renaming a tag keeps the link and clears the link map cache for the book
-        self.assertTrue(1 in cache.link_maps_cache, "book not in link_map_cache")
+        self.assertTrue(1 in cache.link_maps_cache, 'book not in link_map_cache')
         tag_id = cache.get_item_id('tags', 'foo')
         cache.rename_items('tags', {tag_id: 'foobar'})
-        self.assertTrue(1 not in cache.link_maps_cache, "book still in link_map_cache")
+        self.assertTrue(1 not in cache.link_maps_cache, 'book still in link_map_cache')
         links = cache.get_link_map('tags')
-        self.assertTrue('foobar' in links, "rename foo lost the link")
-        self.assertEqual(links['foobar'], 'url', "The link changed contents")
+        self.assertTrue('foobar' in links, 'rename foo lost the link')
+        self.assertEqual(links['foobar'], 'url', 'The link changed contents')
         links = cache.get_all_link_maps_for_book(1)
-        self.assertTrue(1 in cache.link_maps_cache, "book not put back into link_map_cache")
+        self.assertTrue(1 in cache.link_maps_cache, 'book not put back into link_map_cache')
         self.assertDictEqual({'publisher': {'random': 'url2'}, 'tags': {'foobar': 'url'}},
-                             links, "book links incorrect after tag rename")
+                             links, 'book links incorrect after tag rename')
 
         # Check ProxyMetadata
         mi = cache.get_proxy_metadata(1)
         self.assertDictEqual({'publisher': {'random': 'url2'}, 'tags': {'foobar': 'url'}},
                              mi.link_maps, "ProxyMetadata didn't return the right link map")
-
 
         # Now test deleting the links.
         links = cache.get_link_map('tags')
@@ -1054,6 +1049,4 @@ class WritingTest(BaseTest):
         cache.set_link_map('publisher', to_del)
         self.assertEqual({}, cache.get_link_map('publisher'), 'links on publisher were not deleted')
         self.assertEqual({}, cache.get_all_link_maps_for_book(1), 'Not all links for book were deleted')
-
-
     # }}}
