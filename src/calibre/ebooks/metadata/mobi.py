@@ -227,7 +227,7 @@ class MetadataUpdater:
         # Fetch the existing title
         title_offset, = unpack('>L', self.record0[0x54:0x58])
         title_length, = unpack('>L', self.record0[0x58:0x5c])
-        title_in_file, = unpack('%ds' % (title_length), self.record0[title_offset:title_offset + title_length])
+        title_in_file, = unpack(f'{title_length}s', self.record0[title_offset:title_offset + title_length])
 
         # Adjust length to accommodate PrimaryINDX if necessary
         mobi_header_length, = unpack('>L', self.record0[0x14:0x18])
@@ -286,7 +286,7 @@ class MetadataUpdater:
             s, src = src[:length],src[length:]
             hexa = ' '.join([f'{ord(x):02X}' for x in s])
             s = s.translate(FILTER)
-            result += '%04X   %-*s   %s\n' % (N, length*3, hexa, s)
+            result += '%04X   %-*s   %s\n' % (N, length*3, hexa, s)  # noqa: UP031
             N+=length
         print(result)
 
@@ -308,7 +308,7 @@ class MetadataUpdater:
     def dump_pdbrecords(self):
         # Diagnostic
         print('MetadataUpdater.dump_pdbrecords()')
-        print('%10s %10s %10s' % ('offset','flags','val'))
+        print(f"{'offset':>10} {'flags':>10} {'val':>10}")
         for i in range(len(self.pdbrecords)):
             pdbrecord = self.pdbrecords[i]
             print(f'{pdbrecord[0]:10X} {pdbrecord[1]:10X} {pdbrecord[2]:10X}')

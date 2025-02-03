@@ -148,7 +148,7 @@ class MetadataUpdater:
         for tag in self.topaz_headers:
             print(f'{tag}: ')
             num_recs = len(self.topaz_headers[tag]['blocks'])
-            print(' num_recs: %d' % num_recs)
+            print(f' num_recs: {num_recs}')
             if num_recs:
                 print(' starting offset: 0x{:x}'.format(self.topaz_headers[tag]['blocks'][0]['offset']))
 
@@ -161,7 +161,7 @@ class MetadataUpdater:
             s, src = src[:length],src[length:]
             hexa = ' '.join([f'{ord(x):02X}' for x in s])
             s = s.translate(FILTER)
-            result += '%04X   %-*s   %s\n' % (N, length*3, hexa, s)
+            result += '%04X   %-*s   %s\n' % (N, length*3, hexa, s)  # noqa: UP031
             N+=length
         print(result)
 

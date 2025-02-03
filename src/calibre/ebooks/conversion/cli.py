@@ -302,7 +302,7 @@ class ProgressBar:
     def __call__(self, frac, msg=''):
         if msg:
             percent = int(frac*100)
-            self.log('%d%% %s'%(percent, msg))
+            self.log(f'{percent}% {msg}')
 
 
 def create_option_parser(args, log):
@@ -320,7 +320,7 @@ def create_option_parser(args, log):
                 log('\t'+title)
             except:
                 log('\t'+repr(title))
-        log('%d recipes available'%len(titles))
+        log(f'{len(titles)} recipes available')
         raise SystemExit(0)
 
     parser = option_parser()

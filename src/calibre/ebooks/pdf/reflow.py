@@ -151,8 +151,7 @@ class Image(Element):
         self.align = 'L'
 
     def to_html(self):
-        return '<img src="%s" alt="" width="%dpx" height="%dpx"/>' % \
-                (self.src, int(self.width), int(self.height))
+        return f'<img src="{self.src}" alt="" width="{int(self.width)}px" height="{int(self.height)}px"/>'
 
     def dump(self, f):
         f.write(self.to_html())
@@ -227,8 +226,7 @@ class Text(Element):
 
     def coalesce(self, other, page_number, left_margin, right_margin):
         if self.opts.verbose > 2:
-            self.log.debug('Coalescing %r with %r on page %d'%(self.text_as_string,
-                other.text_as_string, page_number))
+            self.log.debug(f'Coalescing {self.text_as_string!r} with {other.text_as_string!r} on page {page_number}')
         # Need to work out how to decide this
         # For elements of the same line, is there a space between?
         has_float = ''
@@ -273,8 +271,8 @@ class Text(Element):
         if self.font_size_em == other.font_size_em \
           and False \
           and self.font.id == other.font.id \
-          and re.match(r'<span style="font-size:', self.raw) is not None \
-          and re.match(r'<span style="font-size:', other.raw) is not None:
+          and self.raw.startswith(r'<span style="font-size:') \
+          and other.raw.startswith(r'<span style="font-size:'):
             # We have the same class, so merge
             m_self = re.match(r'^(.+)</span>$', self.raw)
             m_other = re.match(r'^<span style="font-size:.+em">(.+</span>)$', other.raw)
@@ -283,7 +281,7 @@ class Text(Element):
                 other.raw = m_other.group(1)
         elif self.font_size_em != other.font_size_em \
           and self.font_size_em != 1.00:
-            if re.match(r'<span', self.raw) is None:
+            if not self.raw.startswith(r'<span'):
                 self.raw = f'<span style="font-size:{self.font_size_em!s}em">{self.raw}</span>'
             # Try to allow for a very large initial character
             elif len(self.text_as_string) <= 2 \
@@ -535,7 +533,7 @@ class Column:
         return self.elements[idx-1]
 
     def dump(self, f, num):
-        f.write('******** Column %d\n\n'%num)
+        f.write(f'******** Column {num}\n\n')
         for elem in self.elements:
             elem.dump(f)
 
@@ -549,7 +547,7 @@ class Box(list):
         ans = [f'<{self.tag}>']
         for elem in self:
             if isinstance(elem, int):
-                ans.append('<a name="page_%d"/>'%elem)
+                ans.append(f'<a name="page_{elem}"/>')
             else:
                 ans.append(elem.to_html()+' ')
         ans.append(f'</{self.tag}>')
@@ -569,7 +567,7 @@ class ImageBox(Box):
             ans.append('<br/>')
             for elem in self:
                 if isinstance(elem, int):
-                    ans.append('<a name="page_%d"/>'%elem)
+                    ans.append(f'<a name="page_{elem}"/>')
                 else:
                     ans.append(elem.to_html()+' ')
         ans.append('</div>')
@@ -696,7 +694,7 @@ class Region:
 
     def dump(self, f):
         f.write('############################################################\n')
-        f.write('########## Region (%d columns) ###############\n'%len(self.columns))
+        f.write(f'########## Region ({len(self.columns)} columns) ###############\n')
         f.write('############################################################\n\n')
         for i, col in enumerate(self.columns):
             col.dump(f, i)
@@ -760,7 +758,7 @@ class Page:
         self.number = int(page.get('number'))
         self.odd_even = self.number % 2    # Odd = 1
         self.top, self.left, self.width, self.height = map(float, map(page.get, ('top', 'left', 'width', 'height')))
-        self.id = 'page%d'%self.number
+        self.id = f'page{self.number}'
         self.page_break_after = False
 
         self.texts = []
@@ -1211,7 +1209,7 @@ class Page:
             self.regions.append(current_region)
 
         if self.opts.verbose > 2:
-            self.debug_dir = 'page-%d'%self.number
+            self.debug_dir = f'page-{self.number}'
             os.mkdir(self.debug_dir)
             self.dump_regions('pre-coalesce')
 
@@ -1222,7 +1220,7 @@ class Page:
     def dump_regions(self, fname):
         fname = 'regions-'+fname+'.txt'
         with open(os.path.join(self.debug_dir, fname), 'wb') as f:
-            f.write('Page #%d\n\n'%self.number)
+            f.write(f'Page #{self.number}\n\n')
             for region in self.regions:
                 region.dump(f)
 
@@ -1370,7 +1368,7 @@ class Page:
                     ans[-1] += ' style="text-align:center"'
                 if self.id_used == 0:
                     self.id_used = 1
-                    ans[-1] += ' id="page_%d"'%self.number
+                    ans[-1] += f' id="page_{self.number}"'
                 ans[-1] += '>'
                 ans[-1] += self.imgs[iind].to_html()
                 ans[-1] += '</p>'
@@ -1383,7 +1381,7 @@ class Page:
             #   and  text.tag[0] == 'h'
             if self.id_used == 0:
                 self.id_used = 1
-                ans[-1] += ' id="page_%d"'%self.number
+                ans[-1] += f' id="page_{self.number}"'
             if text.align == 'C':
                 ans[-1] += ' style="text-align:center"'
             elif text.align == 'R':
@@ -1415,7 +1413,7 @@ class Page:
                 ans[-1] += ' style="text-align:center"'
             if self.id_used == 0:
                 self.id_used = 1
-                ans[-1] += ' id="page_%d"'%self.number
+                ans[-1] += f' id="page_{self.number}"'
             ans[-1] += '>'
             ans[-1] += self.imgs[iind].to_html()
             ans[-1] += '</p>'

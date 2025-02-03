@@ -154,7 +154,7 @@ def py3_repr(x):
 
 
 def options_to_recipe_source(title, oldest_article, max_articles_per_feed, feeds):
-    classname = 'BasicUserRecipe%d' % int(time.time())
+    classname = f'BasicUserRecipe{int(time.time())}'
     title = str(title).strip() or classname
     indent = ' ' * 8
     if feeds:
@@ -725,7 +725,7 @@ class CustomRecipes(Dialog):
                 c = 0
                 while self.recipe_list.has_title(title):
                     c += 1
-                    title = '%s %d' % (base_title, c)
+                    title = f'{base_title} {c}'
             try:
                 src = options_to_recipe_source(title, oldest_article, max_articles_per_feed, group.feeds)
                 compile_recipe(src)

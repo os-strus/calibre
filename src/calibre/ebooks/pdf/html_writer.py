@@ -777,7 +777,7 @@ def add_pagenum_toc(root, toc, opts, page_number_display_map):
     .calibre-pdf-toc .level-%d td:first-of-type { padding-left: %.1gem }
     .calibre-pdf-toc .level-%d td:first-of-type { padding-left: %.1gem }
     .calibre-pdf-toc .level-%d td:first-of-type { padding-left: %.1gem }
-    ''' % tuple(indents) + (opts.extra_css or '')
+    ''' % tuple(indents) + (opts.extra_css or '')  # noqa: UP031
     style = body.makeelement(XHTML('style'), type='text/css')
     style.text = css
     body.append(style)
@@ -795,7 +795,7 @@ def add_pagenum_toc(root, toc, opts, page_number_display_map):
     E('h2', text=(opts.toc_title or _('Table of Contents')), parent=body)
     table = E('table', parent=body)
     for level, node in toc.iterdescendants(level=0):
-        tr = E('tr', cls='level-%d' % level, parent=table)
+        tr = E('tr', cls=f'level-{level}', parent=table)
         E('td', text=node.title or _('Unknown'), parent=tr)
         num = node.pdf_loc.pagenum
         num = page_number_display_map.get(num, num)

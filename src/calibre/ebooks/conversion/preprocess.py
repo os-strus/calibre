@@ -265,16 +265,16 @@ class Dehyphenator:
         self.format = format
         if format == 'html':
             intextmatch = re.compile((
-                r'(?<=.{%i})(?P<firstpart>[^\W\-]+)(-|‐)\s*(?=<)(?P<wraptags>(</span>)?'
+                r'(?<=.{%i})(?P<firstpart>[^\W\-]+)(-|‐)\s*(?=<)(?P<wraptags>(</span>)?'  # noqa: UP031
                 r'\s*(</[iubp]>\s*){1,2}(?P<up2threeblanks><(p|div)[^>]*>\s*(<p[^>]*>\s*</p>\s*)'
                 r'?</(p|div)>\s+){0,3}\s*(<[iubp][^>]*>\s*){1,2}(<span[^>]*>)?)\s*(?P<secondpart>[\w\d]+)') % length)
         elif format == 'pdf':
             intextmatch = re.compile((
-                r'(?<=.{%i})(?P<firstpart>[^\W\-]+)(-|‐)\s*(?P<wraptags><p>|'
+                r'(?<=.{%i})(?P<firstpart>[^\W\-]+)(-|‐)\s*(?P<wraptags><p>|'  # noqa: UP031
                 r'</[iub]>\s*<p>\s*<[iub]>)\s*(?P<secondpart>[\w\d]+)')% length)
         elif format == 'txt':
             intextmatch = re.compile(
-                r'(?<=.{%i})(?P<firstpart>[^\W\-]+)(-|‐)( |\t)*(?P<wraptags>(\n( |\t)*)+)(?P<secondpart>[\w\d]+)'% length)
+                r'(?<=.{%i})(?P<firstpart>[^\W\-]+)(-|‐)( |\t)*(?P<wraptags>(\n( |\t)*)+)(?P<secondpart>[\w\d]+)'% length)  # noqa: UP031
         elif format == 'individual_words':
             intextmatch = re.compile(
                 r'(?!<)(?P<firstpart>[^\W\-]+)(-|‐)\s*(?P<secondpart>\w+)(?![^<]*?>)', re.UNICODE)
@@ -498,7 +498,7 @@ class HTMLPreProcessor:
 
         # search / replace using the sr?_search / sr?_replace options
         for i in range(1, 4):
-            search, replace = 'sr%d_search'%i, 'sr%d_replace'%i
+            search, replace = f'sr{i}_search', f'sr{i}_replace'
             search_pattern = getattr(self.extra_opts, search, '')
             replace_txt = getattr(self.extra_opts, replace, '')
             if search_pattern:
@@ -529,11 +529,11 @@ class HTMLPreProcessor:
                 # print('The pdf line length returned is ' + str(length))
                 # unwrap em/en dashes
                 end_rules.append((re.compile(
-                    r'(?<=.{%i}[–—])\s*<p>\s*(?=[\[a-z\d])' % length), lambda match: ''))
+                    r'(?<=.{%i}[–—])\s*<p>\s*(?=[\[a-z\d])' % length), lambda match: ''))  # noqa: UP031
                 end_rules.append(
                     # Un wrap using punctuation
                     (re.compile((
-                        r'(?<=.{%i}([a-zäëïöüàèìòùáćéíĺóŕńśúýâêîôûçąężıãõñæøþðßěľščťžňďřů,:)\\IAß]'
+                        r'(?<=.{%i}([a-zäëïöüàèìòùáćéíĺóŕńśúýâêîôûçąężıãõñæøþðßěľščťžňďřů,:)\\IAß]'  # noqa: UP031
                         r'|(?<!\&\w{4});))\s*(?P<ital></(i|b|u)>)?\s*(</p>\s*<p>\s*)+\s*(?=(<(i|b|u)>)?'
                         r'\s*[\w\d$(])') % length, re.UNICODE), wrap_lines),
                 )
@@ -559,7 +559,7 @@ class HTMLPreProcessor:
                     name, i = None, 0
                     while not name or os.path.exists(os.path.join(odir, name)):
                         i += 1
-                        name = '%04d.html'%i
+                        name = f'{i:04}.html'
                     with open(os.path.join(odir, name), 'wb') as f:
                         f.write(raw.encode('utf-8'))
 

@@ -518,7 +518,7 @@ class Convert:
         m = re.match(r'heading\s+(\d+)$', style.style_name or '', re.IGNORECASE)
         if m is not None:
             n = min(6, max(1, int(m.group(1))))
-            dest.tag = 'h%d' % n
+            dest.tag = f'h{n}'
             dest.set('data-heading-level', str(n))
 
         if style.bidi is True:
@@ -696,7 +696,7 @@ class Convert:
                 else:
                     clear = child.get('clear', None)
                     if clear in {'all', 'left', 'right'}:
-                        br = BR(style='clear:%s'%('both' if clear == 'all' else clear))
+                        br = BR(style='clear:{}'.format('both' if clear == 'all' else clear))
                     else:
                         br = BR()
                 text.add_elem(br)

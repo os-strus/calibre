@@ -427,10 +427,10 @@ class SchedulerConfig:
                 schedule = 0.04
             text = f'{schedule:f}'
         elif typ == 'day/time':
-            text = '%d:%d:%d'%schedule
+            text = f'{int(schedule[0])}:{int(schedule[1])}:{int(schedule[2])}'
         elif typ in ('days_of_week', 'days_of_month'):
             dw = ','.join(map(str, map(int, schedule[0])))
-            text = '%s:%d:%d'%(dw, schedule[1], schedule[2])
+            text = f'{dw}:{int(schedule[1])}:{int(schedule[2])}'
         else:
             raise ValueError(f'Unknown schedule type: {typ!r}')
         s.text = text
@@ -574,7 +574,7 @@ class SchedulerConfig:
                     if urn.startswith('recipe_'):
                         urn = 'builtin:'+urn[7:]
                     else:
-                        urn = 'custom:%d'%int(urn)
+                        urn = f'custom:{int(urn)}'
                     try:
                         username, password = c[k]
                     except:
@@ -596,14 +596,14 @@ class SchedulerConfig:
             urn = 'builtin:'+r['id'][7:]
         elif not r['builtin']:
             try:
-                urn = 'custom:%d'%int(r['id'])
+                urn = 'custom:{}'.format(int(r['id']))
             except:
                 return
         schedule = r['schedule']
         typ = 'interval'
         if schedule > 1e5:
             typ = 'day/time'
-            raw = '%d'%int(schedule)
+            raw = str(int(schedule))
             day = int(raw[0]) - 1
             hour = int(raw[2:4]) - 1
             minute = int(raw[-2:]) - 1
