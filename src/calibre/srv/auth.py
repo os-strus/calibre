@@ -248,7 +248,7 @@ class AuthController:
         self.log = log
         self.secret = as_hex_unicode(os.urandom(random.randint(20, 30)))
         self.max_age_seconds = max_age_seconds
-        self.key_order = '{%d}:{%d}:{%d}' % random.choice(tuple(permutations((0,1,2))))
+        self.key_order = '{%d}:{%d}:{%d}' % random.choice(tuple(permutations((0,1,2))))  # noqa: UP031
         self.realm = realm
         if '"' in realm:
             raise ValueError('Double-quotes are not allowed in the authentication realm')
@@ -271,7 +271,7 @@ class AuthController:
     def do_http_auth(self, data, endpoint):
         ban_key = data.remote_addr, data.forwarded_for
         if self.ban_list.is_banned(ban_key):
-            raise HTTPForbidden('Too many login attempts', log='Too many login attempts from: %s' % (ban_key if data.forwarded_for else data.remote_addr))
+            raise HTTPForbidden('Too many login attempts', log=f'Too many login attempts from: {ban_key if data.forwarded_for else data.remote_addr}')
         auth = data.inheaders.get('Authorization')
         nonce_is_stale = False
         log_msg = None

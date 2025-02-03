@@ -43,7 +43,7 @@ class IndirectObjects:
     def write_obj(self, stream, num, obj):
         stream.write(EOL)
         self._offsets[num-1] = stream.tell()
-        stream.write('%d 0 obj'%num)
+        stream.write(f'{num} 0 obj')
         stream.write(EOL)
         serialize(obj, stream)
         if stream.last_char != EOL:
@@ -66,13 +66,13 @@ class IndirectObjects:
     def write_xref(self, stream):
         self.xref_offset = stream.tell()
         stream.write(b'xref'+EOL)
-        stream.write('0 %d'%(1+len(self._offsets)))
+        stream.write(f'0 {1 + len(self._offsets)}')
         stream.write(EOL)
-        stream.write('%010d 65535 f '%0)
+        stream.write(f'{0:010} 65535 f ')
         stream.write(EOL)
 
         for offset in self._offsets:
-            line = '%010d 00000 n '%offset
+            line = f'{offset:010} 00000 n '
             stream.write(line.encode('ascii') + EOL)
         return self.xref_offset
 
@@ -92,24 +92,24 @@ class Page(Stream):
 
     def set_opacity(self, opref):
         if opref not in self.opacities:
-            self.opacities[opref] = 'Opa%d'%len(self.opacities)
+            self.opacities[opref] = f'Opa{len(self.opacities)}'
         name = self.opacities[opref]
         serialize(Name(name), self)
         self.write(b' gs ')
 
     def add_font(self, fontref):
         if fontref not in self.fonts:
-            self.fonts[fontref] = 'F%d'%len(self.fonts)
+            self.fonts[fontref] = f'F{len(self.fonts)}'
         return self.fonts[fontref]
 
     def add_image(self, imgref):
         if imgref not in self.xobjects:
-            self.xobjects[imgref] = 'Image%d'%len(self.xobjects)
+            self.xobjects[imgref] = f'Image{len(self.xobjects)}'
         return self.xobjects[imgref]
 
     def add_pattern(self, patternref):
         if patternref not in self.patterns:
-            self.patterns[patternref] = 'Pat%d'%len(self.patterns)
+            self.patterns[patternref] = f'Pat{len(self.patterns)}'
         return self.patterns[patternref]
 
     def add_resources(self):
@@ -526,5 +526,5 @@ class PDFStream:
                               'ID':Array([file_id, file_id]), 'Info':inforef})
         serialize(trailer, self.stream)
         self.write_line('startxref')
-        self.write_line('%d'%startxref)
+        self.write_line(f'{startxref}')
         self.stream.write('%%EOF')

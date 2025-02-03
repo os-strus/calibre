@@ -97,6 +97,13 @@ class FileOrFolder:
         self.is_ebook = (not self.is_folder and not self.is_storage and
                 self.name.rpartition('.')[-1].lower() in bexts and not self.name.startswith('._'))
 
+        # allow Kindle Scribe notebooks to be imported and preserve the notebook name
+        if self.name == 'nbk' and not (self.is_folder or self.is_storage):
+            if len(self.full_path) >= 3 and self.full_path[-3] == '.notebooks':
+                nbk_name = self.full_path[-2].replace('!!notebook', '').replace('!!', ' ')
+                self.name = f'Scribe {nbk_name} Notebook.kfx'
+                self.is_ebook = True
+
     def __repr__(self):
         if self.is_storage:
             name = 'Storage'
@@ -108,7 +115,7 @@ class FileOrFolder:
             path = ''
         datum = f'size={self.size}'
         if self.is_folder or self.is_storage:
-            datum = 'children=%s'%(len(self.files) + len(self.folders))
+            datum = f'children={len(self.files)+len(self.folders)}'
         return f'{name}(id={self.object_id}, storage_id={self.storage_id}, {datum}, path={path}, modified={self.last_mod_string})'
 
     __str__ = __repr__

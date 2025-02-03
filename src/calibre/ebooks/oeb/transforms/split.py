@@ -134,7 +134,7 @@ class Split:
         page_breaks.sort(key=lambda x: int(x.get('pb_order')))
         page_break_ids, page_breaks_ = [], []
         for i, x in enumerate(page_breaks):
-            x.set('id', x.get('id', 'calibre_pb_%d'%i))
+            x.set('id', x.get('id', f'calibre_pb_{i}'))
             id = x.get('id')
             try:
                 xp = XPath(f'//*[@id="{id}"]')
@@ -145,7 +145,7 @@ class Split:
                     # The id has both a quote and an apostrophe or some other
                     # Just replace it since I doubt its going to work anywhere else
                     # either
-                    id = 'calibre_pb_%d'%i
+                    id = f'calibre_pb_{i}'
                     x.set('id', id)
                     xp = XPath(f'//*[@id={id!r}]')
             page_breaks_.append((xp, x.get('pb_before', '0') == '1'))
@@ -221,7 +221,7 @@ class FlowSplitter:
             for i, tree in enumerate(trees):
                 size = len(tostring(tree.getroot()))
                 if size > self.max_flow_size:
-                    self.log('\tFound large tree #%d'%i)
+                    self.log(f'\tFound large tree #{i}')
                     lt_found = True
                     self.split_trees = []
                     self.split_to_size(tree)
@@ -234,7 +234,7 @@ class FlowSplitter:
 
         self.was_split = len(self.trees) > 1
         if self.was_split:
-            self.log('\tSplit into %d parts'%len(self.trees))
+            self.log(f'\tSplit into {len(self.trees)} parts')
         self.commit()
 
     def split_on_page_breaks(self, orig_tree):
@@ -309,10 +309,10 @@ class FlowSplitter:
         return True
 
     def split_text(self, text, root, size):
-        self.log.debug('\t\t\tSplitting text of length: %d'%len(text))
+        self.log.debug(f'\t\t\tSplitting text of length: {len(text)}')
         rest = text.replace('\r', '')
         parts = rest.split('\n\n')
-        self.log.debug('\t\t\t\tFound %d parts'%len(parts))
+        self.log.debug(f'\t\t\t\tFound {len(parts)} parts')
         if max(map(len, parts)) > size:
             raise SplitError('Cannot split as file contains a <pre> tag '
                 'with a very large paragraph', root)
@@ -366,11 +366,10 @@ class FlowSplitter:
             elif size <= self.max_flow_size:
                 self.split_trees.append(t)
                 self.log.debug(
-                    '\t\t\tCommitted sub-tree #%d (%d KB)'%(
-                               len(self.split_trees), size/1024.))
+                    f'\t\t\tCommitted sub-tree #{len(self.split_trees)} ({size/1024.0} KB)')
             else:
                 self.log.debug(
-                        '\t\t\tSplit tree still too large: %d KB' % (size/1024.))
+                        f'\t\t\tSplit tree still too large: {size/1024.0} KB')
                 self.split_to_size(t)
 
     def find_split_point(self, root):

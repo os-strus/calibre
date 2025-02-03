@@ -308,7 +308,7 @@ class RtfTokenizer:
                         i = i + 1
 
                     if not consumed:
-                        raise Exception('Error (at:%d): Control Word without end.'%(tokenStart))
+                        raise Exception(f'Error (at:{tokenStart}): Control Word without end.')
 
                     # we have numeric argument before delimiter
                     if isChar(self.rtfData[i], '-') or isDigit(self.rtfData[i]):
@@ -322,10 +322,10 @@ class RtfTokenizer:
                             l = l + 1
                             i = i + 1
                             if l > 10:
-                                raise Exception('Error (at:%d): Too many digits in control word numeric argument.'%[tokenStart])
+                                raise Exception(f'Error (at:{tokenStart}): Too many digits in control word numeric argument.')
 
                         if not consumed:
-                            raise Exception('Error (at:%d): Control Word without numeric argument end.'%[tokenStart])
+                            raise Exception(f'Error (at:{tokenStart}): Control Word without numeric argument end.')
 
                     separator = ''
                     if isChar(self.rtfData[i], ' '):

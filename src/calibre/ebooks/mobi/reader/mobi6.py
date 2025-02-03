@@ -525,7 +525,7 @@ class MobiReader:
                     except Exception:
                         pass
                     else:
-                        attrib['src'] = 'images/' + image_name_map.get(recindex, '%05d.jpg' % recindex)
+                        attrib['src'] = 'images/' + image_name_map.get(recindex, f'{recindex:05}.jpg')
                 for attr in ('width', 'height'):
                     if attr in attrib:
                         val = attrib[attr]
@@ -533,7 +533,7 @@ class MobiReader:
                             try:
                                 nval = float(val[:-2])
                                 nval *= 16 * (168.451/72)  # Assume this was set using the Kindle profile
-                                attrib[attr] = '%dpx'%int(nval)
+                                attrib[attr] = f'{int(nval)}px'
                             except:
                                 del attrib[attr]
                         elif val.lower().endswith('%'):
@@ -558,7 +558,7 @@ class MobiReader:
             if 'filepos' in attrib:
                 filepos = attrib.pop('filepos')
                 try:
-                    attrib['href'] = '#filepos%d' % int(filepos)
+                    attrib['href'] = f'#filepos{int(filepos)}'
                 except ValueError:
                     pass
             if (tag.tag == 'a' and attrib.get('id', '').startswith('filepos') and
@@ -577,7 +577,7 @@ class MobiReader:
                         ncls = sel
                         break
                 if ncls is None:
-                    ncls = 'calibre_%d' % i
+                    ncls = f'calibre_{i}'
                     self.tag_css_rules[ncls] = rule
                 cls = attrib.get('class', '')
                 cls = cls + (' ' if cls else '') + ncls
@@ -658,11 +658,11 @@ class MobiReader:
             mi = MetaInformation(self.book_header.title, [_('Unknown')])
         opf = OPFCreator(os.path.dirname(htmlfile), mi)
         if hasattr(self.book_header.exth, 'cover_offset'):
-            opf.cover = 'images/%05d.jpg' % (self.book_header.exth.cover_offset + 1)
+            opf.cover = f'images/{self.book_header.exth.cover_offset + 1:05}.jpg'
         elif mi.cover is not None:
             opf.cover = mi.cover
         else:
-            opf.cover = 'images/%05d.jpg' % 1
+            opf.cover = f'images/{1:05}.jpg'
             if not os.path.exists(os.path.join(os.path.dirname(htmlfile),
                 * opf.cover.split('/'))):
                 opf.cover = None
@@ -920,7 +920,7 @@ class MobiReader:
                 except OSError:
                     self.log.warn(f'Ignoring undecodeable GIF image at index {image_index}')
                     continue
-            path = os.path.join(output_dir, '%05d.%s' % (image_index, imgfmt))
+            path = os.path.join(output_dir, f'{image_index:05}.{imgfmt}')
             image_name_map[image_index] = os.path.basename(path)
             if imgfmt == 'png':
                 with open(path, 'wb') as f:

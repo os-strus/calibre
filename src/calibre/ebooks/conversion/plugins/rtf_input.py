@@ -141,7 +141,7 @@ class RTFInput(InputFormatPlugin):
             if fmt is None:
                 fmt = 'wmf'
             count += 1
-            name = '%04d.%s' % (count, fmt)
+            name = f'{count:04}.{fmt}'
             with open(name, 'wb') as f:
                 f.write(data)
             imap[count] = name
@@ -192,10 +192,8 @@ class RTFInput(InputFormatPlugin):
         return name
 
     def write_inline_css(self, ic, border_styles):
-        font_size_classes = ['span.fs%d { font-size: %spt }'%(i, x) for i, x in
-                enumerate(ic.font_sizes)]
-        color_classes = ['span.col%d { color: %s }'%(i, x) for i, x in
-                enumerate(ic.colors) if x != 'false']
+        font_size_classes = [f'span.fs{i} {{ font-size: {x}pt }}' for i, x in enumerate(ic.font_sizes)]
+        color_classes = [f'span.col{i} {{ color: {x} }}' for i, x in enumerate(ic.colors) if x != 'false']
         css = textwrap.dedent('''
         span.none {
             text-decoration: none; font-weight: normal;
@@ -243,7 +241,7 @@ class RTFInput(InputFormatPlugin):
             if style not in border_styles:
                 border_styles.append(style)
             idx = border_styles.index(style)
-            cls = 'border_style%d'%idx
+            cls = f'border_style{idx}'
             style_map[cls] = style
             elem.set('class', cls)
         return style_map

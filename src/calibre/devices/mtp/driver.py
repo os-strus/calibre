@@ -27,8 +27,7 @@ from calibre.utils.filenames import shorten_components_to
 from calibre.utils.icu import lower as icu_lower
 from polyglot.builtins import as_bytes, iteritems, itervalues
 
-BASE = importlib.import_module('calibre.devices.mtp.%s.driver'%(
-    'windows' if iswindows else 'unix')).MTP_DEVICE
+BASE = importlib.import_module('calibre.devices.mtp.{}.driver'.format('windows' if iswindows else 'unix')).MTP_DEVICE
 DEFAULT_THUMBNAIL_HEIGHT = 320
 
 
@@ -115,8 +114,9 @@ class MTP_DEVICE(BASE):
             'pictures', 'ringtones', 'samsung', 'sony', 'htc', 'bluetooth', 'fonts',
             'games', 'lost.dir', 'video', 'whatsapp', 'image', 'com.zinio.mobile.android.reader'}:
             return True
-        if lpath[0].startswith('.') and lpath[0] != '.tolino':
+        if lpath[0].startswith('.') and lpath[0] not in ('.tolino', '.notebooks'):
             # apparently the Tolino for some reason uses a hidden folder for its library, sigh.
+            # Kindle Scribe stores user notebooks in subfolders of '.notebooks'
             return True
         if lpath[0] == 'system' and not self.is_kindle:
             # on Kindles we need the system/thumbnails folder for the amazon cover bug workaround
@@ -350,6 +350,21 @@ class MTP_DEVICE(BASE):
         from calibre.customize.ui import quick_metadata
         from calibre.ebooks.metadata.meta import get_metadata
         ext = mtp_file.name.rpartition('.')[-1].lower()
+        if self.is_kindle and ext == 'kfx' and mtp_file.name != 'metadata.kfx':
+            # locate the actual file containing KFX book metadata
+            stream = BytesIO()
+            try:
+                self.get_file_by_name(stream, mtp_file.parent, *(mtp_file.name[:-4] + '.sdr', 'assets', 'metadata.kfx'))
+            except Exception:
+                pass    # expect failure for sideloaded books and personal documents
+            else:
+                stream.name = 'metadata.kfx'
+                with quick_metadata:
+                    metadata = get_metadata(stream, stream_type=ext,
+                            force_read_metadata=True,
+                            pattern=self.build_template_regexp())
+                if metadata.title != 'metadata' and metadata.title != 'Unknown':
+                    return metadata
         stream = self.get_mtp_file(mtp_file)
         with quick_metadata:
             return get_metadata(stream, stream_type=ext,
@@ -418,7 +433,26 @@ class MTP_DEVICE(BASE):
                     ans.append((path, e, traceback.format_exc()))
                 else:
                     ans.append(out.name)
+                    if self.is_kindle and path.endswith('.kfx'):
+                        # copy additional KFX files from the associated .sdr folder
+                        try:
+                            sdr_folder_name = f.name[:-4] + '.sdr'
+                            new_sdr_path = os.path.join(os.path.split(out.name)[0], sdr_folder_name)
+                            os.mkdir(new_sdr_path)
+                            self.scan_sdr_for_kfx_files(f.parent, (sdr_folder_name, 'assets'), new_sdr_path)
+                        except Exception:
+                            traceback.print_exc()
         return ans
+
+    def scan_sdr_for_kfx_files(self, parent, folders, new_sdr_path):
+        for ff in self.list_folder_by_name(parent, *folders):
+            if ff.is_folder:
+                self.scan_sdr_for_kfx_files(parent, folders + (ff.name,), new_sdr_path)
+            elif ff.name.endswith('.kfx') or ff.name == 'voucher':
+                name = ''.join(shorten_components_to(245 - len(new_sdr_path), [ff.name])) if iswindows else ff.name
+                with open(os.path.join(new_sdr_path, name), 'wb') as out:
+                    self.get_file_by_name(out, parent, *(folders + (ff.name,)))
+
     # }}}
 
     # Sending files to the device {{{
@@ -729,13 +763,21 @@ def main():
         print(dev.device_debug_info(), flush=True)
         docs = dev.prefix_for_location(None)
         print('Prefix for main mem:', docs, flush=True)
-        entries = dev.list_folder_by_name(dev.filesystem_cache.entries[0], docs)
+        parent = dev.filesystem_cache.entries[0]
+        entries = dev.list_folder_by_name(parent, docs)
         pprint(entries)
-        pprint(dev.get_mtp_metadata_by_name(dev.filesystem_cache.entries[0], docs, entries[0].name))
+        pprint(dev.get_mtp_metadata_by_name(parent, docs, entries[0].name))
         files = [x for x in entries if not x.is_folder]
         f = io.BytesIO()
-        dev.get_file_by_name(f, dev.filesystem_cache.entries[0], docs, files[0].name)
-        print('Got', files[0].name, 'of size:', len(f.getvalue()))
+        dev.get_file_by_name(f, parent, docs, files[0].name)
+        data = f.getvalue()
+        print('Got', files[0].name, 'of size:', len(data))
+        parent = parent.folder_named(docs)
+        f.seek(0)
+        destname = 'mtp-driver-test.' + files[0].name.rpartition('.')[2]
+        m = dev.put_file(parent, destname, f, len(data))
+        print('Put', destname, 'in the', docs, 'folder')
+        pprint(m)
     except Exception:
         import traceback
         traceback.print_exc()

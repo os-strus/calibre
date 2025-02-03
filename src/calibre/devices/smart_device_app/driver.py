@@ -484,7 +484,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             except:
                 today = time.localtime()
                 date = (today[0], today[1], today[2])
-            template = '{title}_%d-%d-%d' % date
+            template = f'{{title}}_{date[0]}-{date[1]}-{date[2]}'
         use_subdirs = self.SUPPORTS_SUB_DIRS and settings.use_subdirs
 
         from calibre.library.save_to_disk import config, get_components
@@ -853,7 +853,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                     json_metadata[key]['book'] = self.json_codec.encode_book_metadata(book['book'])
                     json_metadata[key]['last_used'] = book['last_used']
                     result = as_bytes(json.dumps(json_metadata, indent=2, default=to_json))
-                    fd.write(('%0.7d\n'%(len(result)+1)).encode('ascii'))
+                    fd.write(f'{len(result) + 1:007}\n'.encode('ascii'))
                     fd.write(result)
                     fd.write(b'\n')
                     count += 1
@@ -1499,12 +1499,12 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             self.report_progress((i + 1) / float(len(files)), _('Transferring books to device...'))
 
         self.report_progress(1.0, _('Transferring books to device...'))
-        self._debug('finished uploading %d books' % (len(files)))
+        self._debug(f'finished uploading {len(files)} books')
         return paths
 
     @synchronous('sync_lock')
     def add_books_to_metadata(self, locations, metadata, booklists):
-        self._debug('adding metadata for %d books' % (len(metadata)))
+        self._debug(f'adding metadata for {len(metadata)} books')
 
         metadata = iter(metadata)
         for i, location in enumerate(locations):
@@ -1558,7 +1558,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                         bl.remove_book(book)
                         self._set_known_metadata(book, remove=True)
         self.report_progress(1.0, _('Removing books from device metadata listing...'))
-        self._debug('finished removing metadata for %d books' % (len(paths)))
+        self._debug(f'finished removing metadata for {len(paths)} books')
 
     @synchronous('sync_lock')
     def get_file(self, path, outfile, end_session=True, this_book=None, total_books=None):
@@ -1943,7 +1943,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             try:
                 self.listen_socket.listen(1)
             except:
-                message = 'listen on port %d failed' % port
+                message = f'listen on port {port} failed'
                 self._debug(message)
                 self._close_listen_socket()
                 return message

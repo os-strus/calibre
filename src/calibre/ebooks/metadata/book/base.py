@@ -708,7 +708,7 @@ class Metadata:
             elif datatype == 'bool':
                 res = _('Yes') if res else _('No')
             elif datatype == 'rating':
-                res = '%.2g'%(res/2)
+                res = f'{res/2:.2g}'
             elif datatype in ['int', 'float']:
                 try:
                     fmt = cmeta['display'].get('number_format', None)
@@ -748,7 +748,7 @@ class Metadata:
             elif datatype == 'datetime':
                 res = format_date(res, fmeta['display'].get('date_format','dd MMM yyyy'))
             elif datatype == 'rating':
-                res = '%.2g'%(res/2)
+                res = f'{res/2:.2g}'
             elif key == 'size':
                 res = human_readable(res)
             return (name, str(res), orig_res, fmeta)
@@ -765,7 +765,7 @@ class Metadata:
         ans = []
 
         def fmt(x, y):
-            ans.append('%-20s: %s'%(str(x), str(y)))
+            ans.append(f'{x:<20}: {y}')
 
         fmt('Title', self.title)
         if self.title_sort:
@@ -785,7 +785,7 @@ class Metadata:
         if not self.is_null('languages'):
             fmt('Languages', ', '.join(self.languages))
         if self.rating is not None:
-            fmt('Rating', ('%.2g'%(float(self.rating)/2)) if self.rating
+            fmt('Rating', (f'{float(self.rating)/2:.2g}') if self.rating
                     else '')
         if self.timestamp is not None:
             fmt('Timestamp', isoformat(self.timestamp))

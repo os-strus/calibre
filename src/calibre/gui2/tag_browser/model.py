@@ -164,8 +164,13 @@ class TagTreeItem:  # {{{
                             cc = self.category_custom_icons.get(self.tag.category, None)
                     else:
                         cc = self.icon
-        elif self.type == self.CATEGORY and gprefs['tag_browser_show_category_icons']:
-            cc = self.category_custom_icons.get(self.category_key, None)
+        elif self.type == self.CATEGORY:
+            if self.parent.type == self.ROOT:
+                if gprefs['tag_browser_show_category_icons']:
+                    cc = self.category_custom_icons.get(self.category_key, None)
+            else:
+                if gprefs['tag_browser_show_value_icons']:
+                    cc = self.category_custom_icons.get(self.category_key, None)
         self.icon_state_map[0] = cc or QIcon()
 
     def __str__(self):
@@ -1606,6 +1611,11 @@ class TagsModel(QAbstractItemModel):  # {{{
             self.db.new_api.rename_items(lookup_key, {an_item.tag.id: new_name},
                                          restrict_to_book_ids=restrict_to_books)
             self.tag_item_renamed.emit()
+            val_icon_data = self.value_icons.get(an_item.tag.category, {}).get(an_item.tag.original_name)
+            if val_icon_data:
+                # There is an icon for the old value. Rename it
+                self.value_icons[an_item.tag.category].pop(an_item.tag.original_name, None)
+                self.value_icons[an_item.tag.category][new_name] = val_icon_data
             an_item.tag.name = new_name
             an_item.tag.state = TAG_SEARCH_STATES['clear']
             self.use_position_based_index_on_next_recount = True
@@ -1968,7 +1978,7 @@ class TagsModel(QAbstractItemModel):  # {{{
                     if tag.name and tag.name[0] in stars:  # char is a star or a half. Assume rating
                         rnum = len(tag.name)
                         if tag.name.endswith(stars[-1]):
-                            rnum = '%s.5' % (rnum - 1)
+                            rnum = f'{rnum-1}.5'
                         ans.append(f'{prefix}{category}:{rnum}')
                     else:
                         name = tag.original_name

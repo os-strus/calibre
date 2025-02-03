@@ -134,7 +134,7 @@ class DocumentRelationships:
     def add_relationship(self, target, rtype, target_mode=None):
         ans = self.get_relationship_id(target, rtype, target_mode)
         if ans is None:
-            ans = 'rId%d' % (len(self.rmap) + 1)
+            ans = f'rId{len(self.rmap) + 1}'
             self.rmap[(target, rtype, target_mode)] = ans
         return ans
 
@@ -209,7 +209,7 @@ class DOCX:
         E = ElementMaker(namespace=self.namespace.namespaces['ep'], nsmap={None:self.namespace.namespaces['ep']})
         props = E.Properties(
             E.Application(__appname__),
-            E.AppVersion('%02d.%04d' % numeric_version[:2]),
+            E.AppVersion(f'{numeric_version[0]:02}.{numeric_version[1]:04}'),
             E.DocSecurity('0'),
             E.HyperlinksChanged('false'),
             E.LinksUpToDate('true'),
