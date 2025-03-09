@@ -674,7 +674,7 @@ def device_plugins(include_disabled=False):
 def usbms_plugins(include_disabled=True):
     from calibre.devices.usbms.driver import USBMS
     for plugin in device_plugins(include_disabled):
-        if isinstance(plugin, USBMS) and plugin.name not in ('Folder Device Interface',):
+        if isinstance(plugin, USBMS) and plugin.name not in ('Folder Device Interface', 'User Defined USB driver'):
             yield plugin
 
 
@@ -733,7 +733,7 @@ def all_edit_book_tool_plugins():
 _initialized_plugins = []
 
 
-def initialize_plugin(plugin, path_to_zip_file, installation_type):
+def initialize_plugin(plugin, path_to_zip_file=None, installation_type=PluginInstallationType.BUILTIN):
     try:
         p = plugin(path_to_zip_file)
         p.installation_type = installation_type
