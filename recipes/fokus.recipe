@@ -25,49 +25,25 @@ class Fokus(BasicNewsRecipe):
     compress_news_images = True
     needs_subscription = 'optional'
     oldest_article = 7  # days
-    remove_empty_feeds = True
-    extra_css = 'img { display: block; width: 75%; height: auto }'
-
     use_embedded_content = False
+    remove_empty_feeds = True
     scale_news_images_to_device = True
     scale_news_images = (800, 600)
 
-    remove_tags = [
-        dict(name='div', attrs={'class': 'External-ad'}),
-        dict(name='header', attrs={'class': 'Header'}),
-        dict(name='div', attrs={'class': 'Header-expanded'}),
-        dict(name='div', attrs={'class': 'Overlay'}),
-        dict(name='div', attrs={'class': 'Search-expanded'}),
-        dict(name='section', attrs={'class': 'Site__footer'}),
-        dict(name='div', attrs={'class': 'Toaster'}),
-        dict(name='div', attrs={'class': 'fbc-badge'}),
-        dict(name='div', attrs={'class': 'Posts-by-related-cat'}),
-        dict(name='div', attrs={'class': 'finite-scroll'}),
-        dict(name='div', attrs={'class': 'Sidebar'}),
-        dict(name='div', attrs={'id': 'single-comments'}),
-        dict(name='footer', attrs={'class': 'Single__footer'}),
-        dict(name='div', attrs={'class': 'Social-share'}),
-        dict(name='div', attrs={'class': 'mediaconnect-paywall'}),
-        dict(name='svg', attrs={'class': 'icon'}),
-        dict(name='figure', attrs={'class': 'wp-block-audio'}),
-    ]
-
-    remove_tags_after = [
-        dict(name='div', class_='Single__content'),
-    ]
+    # Center and reduce the size of images and image captions.
+    extra_css = '''
+        img { display: block; margin: auto; width: 50%; height: auto }
+        div.calibre-nuked-tag-figure { font-size: small; text-align: center; }
+    '''
 
     keep_only_tags = [
-        dict(name='h1', class_='Single__title'),  # Title.
-        dict(name='h1', class_='Longread__title'),  # Alt. title.
-        dict(name='p', class_='Single__lead'),  # Lead text.
-        dict(name='p', class_='Longread__lead'),  # Alt. lead text.
-        dict(name='figure', class_='Single__thumbnail'),  # Image.
-        dict(name='figure', class_='Longread__thumbnail'),  # Alt. image.
-        # dict(name='p', class_='Meta__author'),  # Author.
-        # dict(name='time', class_='Meta__updated'),  # Last updated.
-        # Main article.
-        dict(name='div', class_='sesamy-protected-content'),
-        dict(name='div', class_='wp-block-core-paragraph'),
+        dict(name='h1', class_='Single__title'),                # Title of "Single" type articles.
+        dict(name='h1', class_='Longread__title'),              # Title of "Longread" type articles.
+        dict(name='p', class_='Single__lead'),                  # Lead text of "Single" type articles.
+        dict(name='p', class_='Longread__lead'),                # Lead text of "Longread" type articles.
+        dict(name='figure', class_='Single__thumbnail'),        # Image of "Single" type articles.
+        dict(name='figure', class_='Longread__thumbnail'),      # Image of "Longread" type articles.
+        dict(name='div', class_='sesamy-protected-content'),    # Article body.
     ]
 
     def get_cover_url(self) -> str:
