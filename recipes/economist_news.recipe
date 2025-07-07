@@ -26,7 +26,9 @@ def process_web_list(li_node):
     li_html = ''
     for li in li_node['items']:
         if li.get('textHtml'):
-            li_html += f'<li>{li.get("textHtml")}</li>'
+            li_html += f'<li>{li["textHtml"]}</li>'
+        elif li.get('textJson'):
+            li_html += f'<li>{parse_textjson(li["textJson"])}</li>'
         else:
             li_html += f'<li>{li.get("text", "")}</li>'
     return li_html
@@ -39,6 +41,33 @@ def process_info_box(bx):
     return info
 
 
+def parse_txt(ty):
+    typ = ty.get('type', '')
+    children = ty.get('children', [])
+    attr = ty.get('attributes', [{}])[0].get('value', '#')
+
+    tag_map = {
+        'text': lambda: [ty.get('value', '')],
+        'scaps': lambda: [f'<span style="font-variant: all-small-caps;">{"".join(parse_txt(c))}</span>' for c in children],
+        'bold': lambda: [f'<b>{"".join(parse_txt(c))}</b>' for c in children],
+        'drop_caps': lambda: [f'<b>{"".join(parse_txt(c))}</b>' for c in children],
+        'italic': lambda: [f'<i>{"".join(parse_txt(c))}</i>' for c in children],
+        'linebreak': lambda: ['<hr>'],
+        'external_link': lambda: [f'<a href="{attr}">{"".join(parse_txt(children[0]))}</a>'] if children else [],
+        'internal_link': lambda: [f'<a href="{attr}">{"".join(parse_txt(children[0]))}</a>'] if children else [],
+        'ufinish': lambda: [text for c in children for text in parse_txt(c)]
+    }
+
+    if typ in tag_map:
+        yield from tag_map[typ]()
+    else:
+        print('** ', typ)
+
+
+def parse_textjson(nt):
+    return ''.join(''.join(parse_txt(n)) for n in nt)
+
+
 def process_web_node(node):
     ntype = node.get('type', '')
     if ntype == 'CROSSHEAD':
@@ -48,17 +77,25 @@ def process_web_node(node):
     elif ntype in ['PARAGRAPH', 'BOOK_INFO']:
         if node.get('textHtml'):
             return f'<p>{node.get("textHtml")}</p>'
+        elif node.get('textJson'):
+            return f'<p>{parse_textjson(node["textJson"])}</p>'
         return f'<p>{node.get("text", "")}</p>'
-    elif ntype == 'IMAGE':
+    elif (ntype == 'IMAGE') or (node.get('__typename', '') == 'ImageComponent'):
         alt = '' if node.get('altText') is None else node.get('altText')
         cap = ''
         if node.get('caption'):
             if node['caption'].get('textHtml') is not None:
                 cap = node['caption']['textHtml']
+            elif node['caption'].get('textJson') is not None:
+                cap = parse_textjson(node['caption']['textJson'])
+            elif node['caption'].get('text') is not None:
+                cap = node['caption']['text']
         return f'<div><img src="{node["url"]}" title="{alt}"></div><div style="text-align:center; font-size:small;">{cap}</div>'
     elif ntype == 'PULL_QUOTE':
         if node.get('textHtml'):
             return f'<blockquote>{node.get("textHtml")}</blockquote>'
+        elif node.get('textJson'):
+            return f'<blockquote>{parse_textjson(node["textJson"])}</blockquote>'
         return f'<blockquote>{node.get("text", "")}</blockquote>'
     elif ntype == 'DIVIDER':
         return '<hr>'
@@ -96,6 +133,9 @@ def load_article_from_web_json(raw):
     main_image_url = safe_dict(data, 'leadComponent') or ''
     if main_image_url:
         body += process_web_node(data['leadComponent'])
+    if data.get('byline'):
+        if data['byline'] is not None:
+            body += f'<p style="color: gray; font-size: small;"><i>{"By " + data["byline"]}</i></p>'
     for node in data.get('body'):
         body += process_web_node(node)
     return '<html><body><article>' + body + '</article></body></html>'
@@ -167,13 +207,13 @@ class EconomistNews(BasicNewsRecipe):
     encoding = 'utf-8'
     masthead_url = 'https://www.livemint.com/lm-img/dev/economist-logo-oneline.png'
 
-    __author__ = 'Kovid Goyal'
+    __author__ = 'unkn0wn'
     description = (
         'Global news and current affairs from a European'
         ' perspective. Get the latest articles here.'
     )
     extra_css = '''
-        em { color:#202020; }
+        em, blockquote { color:#202020; }
         img {display:block; margin:0 auto;}
     '''
 
@@ -240,6 +280,11 @@ class EconomistNews(BasicNewsRecipe):
         br = BasicNewsRecipe.get_browser(self, *args, **kwargs)
         return br
 
+    def economist_test_article(self):
+        return [('Articles', [{'title': 'test',
+            'url': 'https://www.economist.com/1843/2025/05/16/the-rise-fall-and-contested-future-of-hizbullah'
+        }])]
+
     def economist_return_index(self, ans):
         if not ans:
             raise NoArticles(
@@ -251,6 +296,7 @@ class EconomistNews(BasicNewsRecipe):
         return ans
 
     def parse_index(self):
+        # return self.economist_test_article()
         query = {
             'operationName': 'FindHomepage',
             'variables': '{"homepageType":"MOBILE"}',
