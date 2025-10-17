@@ -138,10 +138,9 @@ class CheckLibrary:
                             else:
                                 self.malformed_paths.append((db_path, db_path, id_))
                                 self.malformed_paths_ids.add(int(id_))
-                    else:
-                        if int(id_) not in self.all_ids or db_path.lower() not in self.all_lc_dbpaths:
-                            self.extra_titles.append((title_dir, db_path, 0))
-                            continue
+                    elif int(id_) not in self.all_ids or db_path.lower() not in self.all_lc_dbpaths:
+                        self.extra_titles.append((title_dir, db_path, 0))
+                        continue
 
                     # Record the book to check its formats
                     self.book_dirs.append((db_path, title_dir, id_))
@@ -182,8 +181,7 @@ class CheckLibrary:
         if not ext:
             return False
         ext = ext[1:].lower()
-        if ext.startswith('original_'):
-            ext = ext[len('original_'):]
+        ext = ext.removeprefix('original_')
         if ext in EBOOK_EXTENSIONS:
             return True
         return False
@@ -263,6 +261,5 @@ class CheckLibrary:
         if self.db.has_cover(book_id):
             if COVER_FILE_NAME not in filenames:
                 self.missing_covers.append((title_dir, os.path.join(db_path, COVER_FILE_NAME), book_id))
-        else:
-            if COVER_FILE_NAME in filenames:
-                self.extra_covers.append((title_dir, os.path.join(db_path, COVER_FILE_NAME), book_id))
+        elif COVER_FILE_NAME in filenames:
+            self.extra_covers.append((title_dir, os.path.join(db_path, COVER_FILE_NAME), book_id))
