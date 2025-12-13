@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from functools import lru_cache
 from typing import Any
 
-from qt.core import QAbstractItemView, QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QSize, Qt, QUrl, QVBoxLayout, QWidget, pyqtSignal
+from qt.core import QAbstractItemView, QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QSize, Qt, QUrl, QVBoxLayout, QWidget
 
 from calibre.ai import ChatMessage, ChatMessageType
 from calibre.db.cache import Cache
@@ -205,12 +205,10 @@ class LLMSettingsDialog(LLMSettingsDialogBase):
 
 class LLMPanel(ConverseWidget):
     NOTE_TITLE = _('AI Assistant Discussion')
-    close_requested = pyqtSignal()
 
     def __init__(self, books: list[Metadata], parent: QWidget | None = None):
         self.books = books
         super().__init__(parent, add_close_button=True)
-        self.close_requested.connect(self.close_requested)
 
     def settings_dialog(self) -> QDialog:
         return LLMSettingsDialog(self)
@@ -244,6 +242,12 @@ class LLMPanel(ConverseWidget):
     def create_initial_messages(self, action_prompt: str, **kwargs: Any) -> Iterator[ChatMessage]:
         context_header = format_books_for_query(self.books)
         context_header += ' When you answer the questions use markdown formatting for the answers wherever possible.'
+        if len(self.books) > 1:
+            context_header += ' If any of the specified books are unknown to you, instead of answering the following'
+            ' questions, just say the books are unknown.'
+        else:
+            context_header += ' If the specified book is unknown to you instead of answering the following questions'
+            ' just say the book is unknown.'
         if language_instruction := self.get_language_instruction():
             context_header += ' ' + language_instruction
         yield ChatMessage(context_header, type=ChatMessageType.system)
