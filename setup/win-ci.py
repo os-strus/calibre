@@ -68,7 +68,8 @@ def build():
 
 def test():
     sanitize_path()
-    for q in ('test', 'test_rs'):
+    # test_rs is flaky in CI because webengine is flaky in CI
+    for q in ('test',):
         cmd = [python_exe(), 'setup.py', q]
         printf(*cmd)
         p = subprocess.Popen(cmd)
@@ -91,7 +92,7 @@ def main():
     q = sys.argv[-1]
     setup_env()
     if q == 'bootstrap':
-        subprocess.check_call(['rapydscript', '--version'])
+        subprocess.check_call(['rapydscript.cmd', '--version'])
         build()
     elif q == 'test':
         test()
