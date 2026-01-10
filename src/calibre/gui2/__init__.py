@@ -57,7 +57,7 @@ from qt.core import (
 )
 
 import calibre.gui2.pyqt6_compat as pqc
-from calibre import as_unicode, prints
+from calibre import as_unicode, prints, timed_print
 from calibre.constants import (
     DEBUG,
     __version__,
@@ -93,6 +93,7 @@ from calibre.utils.resources import get_path as P
 from calibre.utils.resources import user_dir
 
 del pqc, geometry_for_restore_as_dict
+timed_print  # for plugin compat
 NO_URL_FORMATTING = QUrl.UrlFormattingOption.None_
 BOOK_DETAILS_DISPLAY_DEBOUNCE_DELAY = 100  # 100 ms is threshold for human visual response
 
@@ -421,6 +422,7 @@ def create_defs():
     defs['tags_browser_category_icons'] = {}
     defs['tags_browser_value_icons'] = {}
     defs['cover_browser_reflections'] = True
+    defs['cover_browser_max_font_size'] = 11
     defs['book_list_extra_row_spacing'] = 0
     defs['refresh_book_list_on_bulk_edit'] = True
     defs['cover_grid_width'] = 0
@@ -490,12 +492,20 @@ def create_defs():
     defs['tag_browser_show_value_icons'] = True
     defs['template_editor_run_as_you_type'] = True
     defs['template_editor_show_all_selected_books'] = True
-    defs['bookshelf_disk_cache_size'] = 1000
+    defs['bookshelf_disk_cache_size'] = 2000
     defs['bookshelf_cache_size_multiple'] = 5
     defs['bookshelf_shadow'] = True
-    defs['bookshelf_thumbnail'] = True
+    defs['bookshelf_thumbnail'] = 'crops'
     defs['bookshelf_variable_height'] = True
     defs['bookshelf_fade_time'] = 400
+    defs['bookshelf_hover'] = 'shift'
+    defs['bookshelf_up_to_down'] = False
+    defs['bookshelf_height'] = 119
+    defs['bookshelf_make_space_for_second_line'] = False
+
+    # Migrate beta bookshelf_thumbnail
+    if isinstance(btv := gprefs.get('bookshelf_thumbnail'), bool):
+        gprefs['bookshelf_thumbnail'] = 'full' if btv else 'none'
 
     def migrate_tweak(tweak_name, pref_name):
         # If the tweak has been changed then leave the tweak in the file so
@@ -1211,6 +1221,10 @@ class Application(QApplication):
             args.extend(('-platformpluginpath', plugins_loc, '-platform', os.environ.get('CALIBRE_HEADLESS_PLATFORM', 'headless')))
         else:
             args.extend(self.palette_manager.args_to_qt)
+        # We disable GPU acceleration as it causes crashes/black screen in some Windows systems and
+        # isnt really needed for performance for our use cases.
+        if not tweaks['qt_webengine_uses_gpu']:
+            args.extend(('--webEngineArgs', '--disable-gpu'))
         self.headless = headless
         from calibre_extensions import progress_indicator
         self.pi = progress_indicator
@@ -1591,11 +1605,8 @@ def ensure_app(headless=True):
             has_headless = ismacos or islinux or isbsd
             if headless and has_headless:
                 args += ['-platformpluginpath', plugins_loc, '-platform', os.environ.get('CALIBRE_HEADLESS_PLATFORM', 'headless')]
-                if isbsd:
-                    val = os.environ.get('QTWEBENGINE_CHROMIUM_FLAGS', '')
-                    if val:
-                        val += ' '
-                    os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = f'{val}--disable-gpu'
+                # WebEngine GPU not needed in headless mode
+                args += ['--webEngineArgs', '--disable-gpu']
                 if ismacos:
                     os.environ['QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM'] = '1'
             if headless and iswindows:
@@ -1732,15 +1743,6 @@ def make_view_use_window_background(view):
     return view
 
 
-def timed_print(*a, **kw):
-    if not DEBUG:
-        return
-    from time import monotonic
-    if not hasattr(timed_print, 'startup_time'):
-        timed_print.startup_time = monotonic()
-    print(f'[{monotonic() - timed_print.startup_time:.2f}]', *a, **kw)
-
-
 def local_path_for_resource(qurl: QUrl, base_qurl: 'QUrl | None' = None) -> str:
     if base_qurl and qurl.isRelative():
         qurl = base_qurl.resolved(qurl)
@@ -1809,7 +1811,3 @@ def resolve_custom_background(name: str ,which='color', for_dark: bool | None = 
 
 def resolve_grid_color(which='color', for_dark: bool | None = None, use_defaults: bool = False):
     return resolve_custom_background('cover_grid_background', which=which, for_dark=for_dark, use_defaults=use_defaults)
-
-
-def resolve_bookshelf_color(which='color', for_dark: bool | None = None, use_defaults: bool = False):
-    return resolve_custom_background('bookshelf_background', which=which, for_dark=for_dark, use_defaults=use_defaults)

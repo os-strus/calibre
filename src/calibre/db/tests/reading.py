@@ -239,7 +239,7 @@ class ReadingTest(BaseTest):
             i, get_cover=True, cover_as_data=True) for i in range(1, 4)}
         cache = None
         for mi2, mi1 in zip(list(new_metadata.values()), list(old_metadata.values())):
-            self.compare_metadata(mi1, mi2)
+            self.compare_metadata(mi1, mi2, exclude=('pages',))
     # }}}
 
     def test_serialize_metadata(self):  # {{{
@@ -253,9 +253,9 @@ class ReadingTest(BaseTest):
         for i in range(1, 4):
             mi = cache.get_metadata(i, get_cover=True, cover_as_data=True)
             rmi = msgpack_loads(msgpack_dumps(mi))
-            self.compare_metadata(mi, rmi, exclude='format_metadata has_cover formats id'.split())
+            self.compare_metadata(mi, rmi, exclude='format_metadata has_cover formats id pages'.split())
             rmi = json_loads(json_dumps(mi))
-            self.compare_metadata(mi, rmi, exclude='format_metadata has_cover formats id'.split())
+            self.compare_metadata(mi, rmi, exclude='format_metadata has_cover formats id pages'.split())
     # }}}
 
     def test_get_cover(self):  # {{{
@@ -473,6 +473,11 @@ class ReadingTest(BaseTest):
         self.assertEqual(cache.books_by_month(), {(2011, 8): {1}, (2011, 9): {2, 3}})
         self.assertEqual(cache.books_by_month(restrict_to_books={1,2}), {(2011, 8): {1}, (2011, 9): {2}})
         self.assertEqual(cache.books_by_year(restrict_to_books=range(cache.backend.max_number_of_variables+200)), {2011: {1, 2, 3}})
+        cache.set_field('#date', {3:datetime.datetime(2001, 11, 10).astimezone(utc_tz)})
+        self.assertEqual(cache.books_by_year('#date'), {2011: {1, 2}, 2001:{3}})
+        self.assertEqual(cache.books_by_year('#date', restrict_to_books={1}), {2011: {1}})
+        self.assertEqual(cache.books_by_month('#date'), {(2011, 9): {1, 2}, (2001, 11): {3}})
+        self.assertEqual(cache.books_by_month('#date', restrict_to_books={1,3}), {(2011, 9): {1}, (2001, 11): {3}})
 
     def test_author_sort_for_authors(self):  # {{{
         'Test getting the author sort for authors from the db'
