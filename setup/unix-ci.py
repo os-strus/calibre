@@ -23,7 +23,7 @@ def setenv(key, val):
     os.environ[key] = os.path.expandvars(val)
 
 
-def download_with_retry(url: 'str | Request', count: int = 5) -> bytes:
+def download_with_retry(url: str | Request, count: int = 5) -> bytes:
     for i in range(count):
         try:
             print('Downloading', getattr(url, 'full_url', url), flush=True)
@@ -178,6 +178,15 @@ def install_grype(exe: str = '/tmp/grype') -> str:
 
 
 IGNORED_DEPENDENCY_CVES = [
+    # python stdlib all these are erroneously marked as fixed in python 3.15
+    # when it hasnt even been released. Sigh.
+    'CVE-2026-0865',
+    'CVE-2025-15282',
+    'CVE-2026-0672',
+    'CVE-2025-15366',
+    'CVE-2025-15367',
+    'CVE-2025-12781',
+    'CVE-2025-11468',
     # libtiff
     'CVE-2025-8851',  # this is erroneously marked as fixed in the database but no release of libtiff has been made with the fix
     # hyphen

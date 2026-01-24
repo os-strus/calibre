@@ -50,6 +50,7 @@ from calibre.utils.icu import sort_key
 from calibre.utils.localization import calibre_langcode_to_name, ngettext
 from calibre.utils.resources import get_path as P
 from calibre.utils.search_query_parser import ParseException, SearchQueryParser
+from calibre_extensions.imageops import load_from_data_without_gil
 
 Counts = namedtuple('Counts', 'library_total total current')
 
@@ -259,14 +260,14 @@ class BooksModel(QAbstractTableModel):  # {{{
         self.buffer_size = buffer
         self.metadata_backup = None
         icon_height = (parent.fontMetrics() if hasattr(parent, 'fontMetrics') else QFontMetrics(QApplication.font())).lineSpacing()
-        self.bool_yes_icon = QIcon.ic('ok.png').pixmap(icon_height)
-        self.bool_no_icon = QIcon.ic('list_remove.png').pixmap(icon_height)
-        self.bool_blank_icon = QIcon.ic('blank.png').pixmap(icon_height)
+        self.bool_yes_icon = QIcon.cached_icon('ok.png').pixmap(icon_height)
+        self.bool_no_icon = QIcon.cached_icon('list_remove.png').pixmap(icon_height)
+        self.bool_blank_icon = QIcon.cached_icon('blank.png').pixmap(icon_height)
         # Qt auto-scales marked icon correctly, so we don't need to do it (and
         # remember that the cover grid view needs a larger version of the icon,
         # anyway)
-        self.marked_icon = QIcon.ic('marked.png')
-        self.bool_blank_icon_as_icon = QIcon(self.bool_blank_icon)
+        self.marked_icon = QIcon.cached_icon('marked.png')
+        self.bool_blank_icon_as_icon = QIcon.cached_icon('blank.png')
         self.row_decoration = None
         self.device_connected = False
         self.ids_to_highlight = []
@@ -314,11 +315,14 @@ class BooksModel(QAbstractTableModel):  # {{{
         self.icon_cache = defaultdict(dict)
         self.icon_bitmap_cache = {}
         self.cover_grid_emblem_cache = defaultdict(dict)
+        self.bookshelf_emblem_cache = defaultdict(dict)
         self.cover_grid_bitmap_cache = {}
+        self.bookshelf_bitmap_cache = {}
         self.color_row_fmt_cache = None
         self.color_template_cache = {}
         self.icon_template_cache = {}
         self.cover_grid_template_cache = {}
+        self.bookshelf_template_cache = {}
 
     def set_row_height(self, height):
         self.row_height = height
@@ -882,10 +886,8 @@ class BooksModel(QAbstractTableModel):  # {{{
         if not data:
             return self.default_image
         img = QImage()
-        img.loadFromData(data)
-        if img.isNull():
-            img = self.default_image
-        return img
+        load_from_data_without_gil(img, data)
+        return self.default_image if img.isNull() else img
 
     def build_data_convertors(self):
         rating_fields = {}
@@ -1586,7 +1588,7 @@ class DeviceBooksModel(BooksModel):  # {{{
         self.search_engine = OnDeviceSearch(self)
         self.editable = ['title', 'authors', 'collections']
         self.book_in_library = None
-        self.sync_icon = QIcon.ic('sync.png')
+        self.sync_icon = QIcon.cached_icon('sync.png')
 
     def counts(self):
         return Counts(len(self.db), len(self.db), len(self.map))
@@ -1787,9 +1789,9 @@ class DeviceBooksModel(BooksModel):  # {{{
                 img.load(cdata.image_path)
             elif cdata:
                 if isinstance(cdata, (tuple, list)):
-                    img.loadFromData(cdata[-1])
+                    load_from_data_without_gil(img, cdata[-1])
                 else:
-                    img.loadFromData(cdata)
+                    load_from_data_without_gil(img, cdata)
         if img.isNull():
             img = self.default_image
         return img

@@ -298,7 +298,7 @@ class AlternateViewsButtons(LayoutButton):  # {{{
             if btn.isChecked():
                 btn.update_state(False)
         self.gui.library_view.alternate_views.show_view(self.view_name if show else None)
-        self.gui.sort_button.setVisible(show)
+        self.gui.show_sort_button_for_alternate_view(show)
         self.gui.group_by_button.setVisible(self.needs_group_by and show)
         AlternateViewsButtons.ignore_toggles = False
 # }}}
@@ -386,12 +386,12 @@ class VLTabs(QTabBar):  # {{{
         a.triggered.connect(partial(self.next_tab, delta=-1)), self.gui.addAction(a)
         self.gui.keyboard.register_shortcut(
             'virtual-library-tab-bar-next', _('Next Virtual library'), action=self.next_action,
-            default_keys=('Ctrl+Right',), group=_('Virtual library'),
+            default_keys=('Ctrl+Tab',), group=_('Virtual library'),
             description=_('Switch to the next Virtual library in the Virtual library tab bar')
         )
         self.gui.keyboard.register_shortcut(
             'virtual-library-tab-bar-previous', _('Previous Virtual library'), action=self.previous_action,
-            default_keys=('Ctrl+Left',), group=_('Virtual library'),
+            default_keys=('Ctrl+Shift+Tab',), group=_('Virtual library'),
             description=_('Switch to the previous Virtual library in the Virtual library tab bar')
         )
 

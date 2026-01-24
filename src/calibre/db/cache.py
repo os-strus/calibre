@@ -1076,6 +1076,20 @@ class Cache:
         return {aid:af.author_data(aid) for aid in author_ids if aid in af.table.id_map}
 
     @read_api
+    def author_sorts(self, author_ids=None) -> dict[int, str]:
+        '''
+        Return author sorts for specified authors.
+
+        If no authors with the specified ids are found an empty dictionary is
+        returned. If author_ids is None, data for all authors is returned.
+        '''
+        af = self.fields['authors']
+        m = af.table.asort_map
+        if author_ids is None:
+            return m.copy()
+        return {aid:m[aid] for aid in author_ids if aid in m}
+
+    @read_api
     def format_hash(self, book_id, fmt):
         ''' Return the hash of the specified format for the specified book. The
         kind of hash is backend dependent, but is usually SHA-256. '''
@@ -1138,11 +1152,14 @@ class Cache:
         return field.format_size(book_id, fmt)
 
     @read_api
-    def pref(self, name, default=None, namespace=None):
+    def pref(self, name, default=None, namespace=None, get_default_from_defaults=False):
         ' Return the value for the specified preference or the value specified as ``default`` if the preference is not set. '
+        p = self.backend.prefs
+        if get_default_from_defaults:
+            default = p.defaults.get(name, default)
         if namespace is not None:
-            return self.backend.prefs.get_namespaced(namespace, name, default)
-        return self.backend.prefs.get(name, default)
+            return p.get_namespaced(namespace, name, default)
+        return p.get(name, default)
 
     @write_api
     def set_pref(self, name, val, namespace=None):

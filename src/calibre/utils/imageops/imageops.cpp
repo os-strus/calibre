@@ -1004,3 +1004,7 @@ QImage texture_image(const QImage &image, const QImage &texturei) {  // {{{
     }
     return canvas;
 } // }}}
+
+bool load_from_data_without_gil(QImage &image, const char *data, size_t len) {  // {{{
+    return image.loadFromData((const uchar*)data, len, NULL);
+} // }}}
