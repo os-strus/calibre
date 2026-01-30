@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from functools import wraps
 from textwrap import wrap
 from threading import Event
+from typing import NamedTuple
 
 from qt.core import (
     QAbstractItemModel,
@@ -106,11 +107,32 @@ def selection_for_rows(m: QAbstractItemModel, rows: Iterable[int]) -> QItemSelec
     return sel
 
 
-def handle_shift_drag(self: QAbstractItemView, index: QModelIndex, row_cmp=cmp, selection_between=QItemSelection) -> None:
-    if not index.isValid() or not getattr(self, 'shift_click_start_data', None):
+class ClickStartData(NamedTuple):
+    row: int
+    min_row: int
+    max_row: int
+
+
+def double_click_action(index: QModelIndex) -> None:
+    from calibre.gui2.ui import get_gui
+    gui = get_gui()
+    tval = tweaks['doubleclick_on_library_view']
+    if tval == 'open_viewer':
+        gui.iactions['View'].view_triggered(index)
+    elif tval in {'edit_metadata', 'edit_cell'}:
+        gui.iactions['Edit Metadata'].edit_metadata(False, False)
+    elif tval in {'show_book_details', 'show_locked_book_details'}:
+        gui.iactions['Show Book Details'].show_book_info(locked=tval == 'show_locked_book_details')
+
+
+def handle_selection_drag(
+    self: QAbstractItemView, index: QModelIndex, start_data: ClickStartData | None,
+    row_cmp=cmp, selection_between=QItemSelection
+) -> None:
+    if not index.isValid() or start_data is None:
         return
     m = self.model()
-    ci = m.index(self.shift_click_start_data[0], 0)
+    ci = m.index(start_data.row, 0)
     if not ci.isValid():
         return
     sm = self.selectionModel()
@@ -126,41 +148,42 @@ def handle_shift_drag(self: QAbstractItemView, index: QModelIndex, row_cmp=cmp, 
         return
     if cr < tgt:
         # mouse is moved after the start pos
-        top = row_min(self.shift_click_start_data[1], cr, row_cmp)
+        top = row_min(start_data.min_row, cr, row_cmp)
         bottom = tgt
     else:
         top = tgt
-        bottom = row_max(self.shift_click_start_data[2], cr, row_cmp)
+        bottom = row_max(start_data.max_row, cr, row_cmp)
     sm.select(selection_between(m.index(top, 0), m.index(bottom, 0)), QItemSelectionModel.SelectionFlag.ClearAndSelect | flags)
 
 
-def handle_shift_click(self: QAbstractItemView, index: QModelIndex, row_cmp=cmp, selection_between=QItemSelection) -> None:
-    self.shift_click_start_data = None
+def get_click_start_data(self: QAbstractItemView, index: QModelIndex, row_cmp) -> ClickStartData:
+    min_row = self.model().rowCount(QModelIndex())
+    max_row = -1
+    for idx in self.selectionModel().selectedIndexes():
+        r = idx.row()
+        min_row = row_min(r, min_row, row_cmp)
+        max_row = row_max(r, max_row, row_cmp)
+    return ClickStartData(index.row(), min_row, max_row)
+
+
+def handle_selection_click(self: QAbstractItemView, index: QModelIndex, row_cmp=cmp, selection_between=QItemSelection) -> ClickStartData | None:
     if not index.isValid():
-        return
+        return None
     sm = self.selectionModel()
     ci = self.currentIndex()
     flags = QItemSelectionModel.SelectionFlag.Rows
-    try:
-        if not ci.isValid():
-            return
-        sm.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
-        if not sm.hasSelection():
-            sm.select(index, QItemSelectionModel.SelectionFlag.ClearAndSelect | flags)
-            return
-        cr = ci.row()
-        tgt = index.row()
-        top = self.model().index(row_min(cr, tgt, row_cmp), 0)
-        bottom = self.model().index(row_max(cr, tgt, row_cmp), 0)
-        sm.select(selection_between(top, bottom), QItemSelectionModel.SelectionFlag.Select | flags)
-    finally:
-        min_row = self.model().rowCount(QModelIndex())
-        max_row = -1
-        for idx in sm.selectedIndexes():
-            r = idx.row()
-            min_row = row_min(r, min_row, row_cmp)
-            max_row = row_max(r, max_row, row_cmp)
-        self.shift_click_start_data = index.row(), min_row, max_row
+    if not ci.isValid():
+        return get_click_start_data(self, index, row_cmp)
+    sm.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
+    if not sm.hasSelection():
+        sm.select(index, QItemSelectionModel.SelectionFlag.ClearAndSelect | flags)
+        return get_click_start_data(self, index, row_cmp)
+    cr = ci.row()
+    tgt = index.row()
+    top = self.model().index(row_min(cr, tgt, row_cmp), 0)
+    bottom = self.model().index(row_max(cr, tgt, row_cmp), 0)
+    sm.select(selection_between(top, bottom), QItemSelectionModel.SelectionFlag.Select | flags)
+    return get_click_start_data(self, index, row_cmp)
 
 
 def handle_enter_press(self, ev, special_action=None, has_edit_cell=True):
@@ -170,8 +193,11 @@ def handle_enter_press(self, ev, special_action=None, has_edit_cell=True):
             mods & Qt.KeyboardModifier.ControlModifier or mods & Qt.KeyboardModifier.AltModifier or
             mods & Qt.KeyboardModifier.ShiftModifier or mods & Qt.KeyboardModifier.MetaModifier
         ):
-            return
-        if self.state() != QAbstractItemView.State.EditingState and self.hasFocus() and self.currentIndex().isValid():
+            return False
+        s = QAbstractItemView.State.NoState
+        if callable(getattr(self, 'state', None)):
+            s = self.state()
+        if s != QAbstractItemView.State.EditingState and self.hasFocus() and self.currentIndex().isValid():
             from calibre.gui2.ui import get_gui
             ev.ignore()
             tweak = tweaks['enter_key_behavior']
@@ -195,6 +221,44 @@ def handle_enter_press(self, ev, special_action=None, has_edit_cell=True):
                 gui.iactions['View'].view_triggered(self.currentIndex())
             gui.enter_key_pressed_in_book_list.emit(self)
             return True
+    return False
+
+
+def render_emblem(book_id, rule, rule_index, cache, mi, db, formatter, template_cache, column_name='cover_grid'):
+    ans = cache[book_id].get(rule, False)
+    if ans is not False:
+        return ans, mi
+    ans = None
+    if mi is None:
+        mi = db.get_proxy_metadata(book_id)
+    ans = formatter.safe_format(rule, mi, '', mi, column_name=f'{column_name}{rule_index}', template_cache=template_cache) or None
+    cache[book_id][rule] = ans
+    return ans, mi
+
+
+def cached_emblem(sz: int, cache: dict[str, QPixmap | QIcon], name: str, raw_icon=None):
+    ans = cache.get(name, False)
+    if ans is not False:
+        return ans
+    ans = None
+    if raw_icon is not None:
+        ans = raw_icon
+    elif name == ':ondevice':
+        ans = QIcon.cached_icon('ok.png')
+    elif name:
+        d = themed_icon_name(os.path.join(config_dir, 'cc_icons'), name)
+        if d is not None:
+            ans = QIcon(d)
+        if ans is None:
+            ans = QIcon(os.path.join(config_dir, 'cc_icons', name))
+    if ans is not None and not ans.is_ok():
+        ans = None
+    if ans is not None and sz:
+        ans = ans.pixmap(sz, sz)
+        if ans.isNull():
+            ans = None
+    cache[name] = ans
+    return ans
 
 
 def image_to_data(image):  # {{{
@@ -322,7 +386,7 @@ def drag_data(self):
 
 
 def mouseMoveEvent(self, event):
-    if self.event_has_mods():
+    if self.event_has_mods() or not event.buttons() & Qt.MouseButton.LeftButton:
         self.drag_start_pos = None
     if not self.drag_allowed:
         if hasattr(self, 'handle_mouse_move_event'):
@@ -617,39 +681,6 @@ class CoverDelegate(QStyledItemDelegate):
                 traceback.print_exc()
         return '', is_stars
 
-    def render_emblem(self, book_id, rule, rule_index, cache, mi, db, formatter, template_cache):
-        ans = cache[book_id].get(rule, False)
-        if ans is not False:
-            return ans, mi
-        ans = None
-        if mi is None:
-            mi = db.get_proxy_metadata(book_id)
-        ans = formatter.safe_format(rule, mi, '', mi, column_name=f'cover_grid{rule_index}', template_cache=template_cache) or None
-        cache[book_id][rule] = ans
-        return ans, mi
-
-    def cached_emblem(self, cache, name, raw_icon=None):
-        ans = cache.get(name, False)
-        if ans is not False:
-            return ans
-        sz = self.emblem_size
-        ans = None
-        if raw_icon is not None:
-            ans = raw_icon.pixmap(sz, sz)
-        elif name == ':ondevice':
-            ans = QIcon.ic('ok.png').pixmap(sz, sz)
-        elif name:
-            pmap = None
-            d = themed_icon_name(os.path.join(config_dir, 'cc_icons'), name)
-            if d is not None:
-                pmap = QIcon(d).pixmap(sz, sz)
-            if pmap is None:
-                pmap = QIcon(os.path.join(config_dir, 'cc_icons', name)).pixmap(sz, sz)
-            if not pmap.isNull():
-                ans = pmap
-        cache[name] = ans
-        return ans
-
     def paint(self, painter, option, index):
         with clip_border_radius(painter, option.rect):
             QStyledItemDelegate.paint(self, painter, option, empty_index)  # draw the hover and selection highlights
@@ -680,16 +711,16 @@ class CoverDelegate(QStyledItemDelegate):
         if self.emblem_size > 0:
             mi = None
             for i, (kind, column, rule) in enumerate(emblem_rules):
-                icon_name, mi = self.render_emblem(book_id, rule, i, m.cover_grid_emblem_cache, mi, db, m.formatter, m.cover_grid_template_cache)
+                icon_name, mi = render_emblem(book_id, rule, i, m.cover_grid_emblem_cache, mi, db, m.formatter, m.cover_grid_template_cache)
                 if icon_name is not None:
                     for one_icon in filter(None, (i.strip() for i in icon_name.split(':'))):
-                        pixmap = self.cached_emblem(m.cover_grid_bitmap_cache, one_icon)
+                        pixmap = cached_emblem(self.emblem_size, m.cover_grid_bitmap_cache, one_icon)
                         if pixmap is not None:
                             emblems.append(pixmap)
             if marked:
-                emblems.insert(0, self.cached_emblem(m.cover_grid_bitmap_cache, ':marked', m.marked_icon))
+                emblems.insert(0, cached_emblem(self.emblem_size, m.cover_grid_bitmap_cache, ':marked', m.marked_icon))
             if on_device:
-                emblems.insert(0, self.cached_emblem(m.cover_grid_bitmap_cache, ':ondevice'))
+                emblems.insert(0, cached_emblem(self.emblem_size, m.cover_grid_bitmap_cache, ':ondevice'))
 
         painter.save()
         right_adjust = 0
@@ -939,13 +970,7 @@ class GridView(MomentumScrollMixin, QListView):
 
     def double_clicked(self, index):
         self.start_view_animation(index)
-        tval = tweaks['doubleclick_on_library_view']
-        if tval == 'open_viewer':
-            self.gui.iactions['View'].view_triggered(index)
-        elif tval in {'edit_metadata', 'edit_cell'}:
-            self.gui.iactions['Edit Metadata'].edit_metadata(False, False)
-        elif tval == 'show_book_details':
-            self.gui.iactions['Show Book Details'].show_book_info()
+        double_click_action(index)
 
     def animation_value_changed(self, value):
         if self.delegate.animating is not None:
@@ -1078,7 +1103,7 @@ class GridView(MomentumScrollMixin, QListView):
         # handle shift drag to extend selections
         if not QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
             return super().mouseMoveEvent(ev)
-        handle_shift_drag(self, self.indexAt(ev.pos()))
+        handle_selection_drag(self, self.indexAt(ev.pos()), getattr(self, 'shift_click_start_data', None))
 
     def handle_mouse_press_event(self, ev):
         # Shift-Click in QListView is broken. It selects extra items in
@@ -1088,7 +1113,7 @@ class GridView(MomentumScrollMixin, QListView):
         # middle item.
         if not QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
             return super().mousePressEvent(ev)
-        handle_shift_click(self, self.indexAt(ev.pos()))
+        self.shift_click_start_data = handle_selection_click(self, self.indexAt(ev.pos()))
 
     def indices_for_merge(self, resolved=True):
         return self.selectionModel().selectedIndexes()

@@ -437,6 +437,8 @@ def run_rapydscript_tests():
 
 def set_data(src, **kw):
     from calibre.db.constants import NO_SEARCH_LINK
+    from calibre.ebooks.oeb.polish.main import SUPPORTED
+    from calibre.library.page_count import CHARS_PER_PAGE
     for k, v in {
         '__SPECIAL_TITLE__': SPECIAL_TITLE_FOR_WEBENGINE_COMMS,
         '__FAKE_PROTOCOL__': FAKE_PROTOCOL,
@@ -447,6 +449,8 @@ def set_data(src, **kw):
         '__BUILTIN_COLORS_DARK__': json.dumps(builtin_colors_dark),
         '__BUILTIN_DECORATIONS__': json.dumps(builtin_decorations),
         '__NO_SEARCH_LINK__': NO_SEARCH_LINK,
+        '__CHARS_PER_PAGE__': str(CHARS_PER_PAGE),
+        '__EDITABLE_FORMATS__': json.dumps(tuple(SUPPORTED)),
     }.items():
         src = src.replace(k, v, 1)
     for k, v in kw.items():
@@ -538,7 +542,7 @@ def create_pot(source_files):
         '--package-version', gettext_options['package_version'], '--bugs-address', gettext_options['bugs_address'],
     ] + list(source_files), capture_output=True)
     if cp.returncode != 0:
-        sys.stderr.write(cp.stderr)
+        sys.stderr.buffer.write(cp.stderr)
         raise SystemExit(cp.returncode)
     return cp.stdout.decode().strip()
 

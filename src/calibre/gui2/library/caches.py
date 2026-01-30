@@ -11,8 +11,8 @@ import weakref
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, MutableMapping
 from functools import partial
-from queue import Empty, Queue
-from threading import Event, Lock, Thread, current_thread
+from queue import Empty, LifoQueue, Queue, ShutDown
+from threading import Event, RLock, Thread, current_thread
 from time import monotonic
 from typing import TypeVar
 
@@ -21,6 +21,7 @@ from qt.core import QBuffer, QByteArray, QColor, QImage, QImageWriter, QIODevice
 from calibre.db.utils import ThumbnailCache as TC
 from calibre.utils import join_with_timeout
 from calibre.utils.img import resize_to_fit
+from calibre_extensions.imageops import load_from_data_without_gil
 
 
 class ThumbnailCache(TC):
@@ -46,7 +47,7 @@ class RAMCache(MutableMapping[int, T]):
 
     def __init__(self, limit=100):
         self.items = OrderedDict[int, T]()
-        self.lock = Lock()
+        self.lock = RLock()
         self.limit = limit
         self.pixmap_staging: list[T] = []
         self.gui_thread = current_thread()
@@ -129,7 +130,7 @@ class Thumbnailer:
         if not cover_as_bytes:
             return self.thumbnail_class(), b''
         cover: QImage = self.thumbnail_class()
-        if not cover.loadFromData(cover_as_bytes):
+        if not load_from_data_without_gil(cover, cover_as_bytes):
             return cover, b''
         cover = self.resize_to_fit(cover, width, height)
         serialized = self.serialize(cover)
@@ -184,10 +185,11 @@ class ThumbnailRenderer(QObject):
         super().__init__(parent)
         self.dbref = lambda: None
         self.thumbnailer = thumbnailer
+        self.shutting_down = False
         self.disk_cache, self.ram_cache = disk_cache, ram_cache
         self.render_thread = None
         self.ignore_render_requests = Event()
-        self.render_queue = Queue()
+        self.render_queue = LifoQueue()
         self.current_library_id = ''
         self._cover_rendered.connect(self.on_cover_rendered, type=Qt.ConnectionType.QueuedConnection)
 
@@ -204,8 +206,9 @@ class ThumbnailRenderer(QObject):
             self.render_thread.start()
 
     def shutdown(self) -> None:
+        self.shutting_down = True
         self.ignore_render_requests.set()
-        self.render_queue.put((None, None, None, None))
+        self.render_queue.shutdown(immediate=True)
         self.disk_cache.shutdown()
         self.render_thread = None
     __del__ = shutdown
@@ -214,10 +217,11 @@ class ThumbnailRenderer(QObject):
         q = self.render_queue
         ignore_render_requests = self.ignore_render_requests
         while True:
-            library_id, book_id, width, height = q.get()
             try:
-                if book_id is None:
-                    break
+                library_id, book_id, width, height = q.get()
+            except ShutDown:
+                break
+            try:
                 if ignore_render_requests.is_set() or library_id != self.current_library_id:
                     continue
                 try:
@@ -341,7 +345,7 @@ class ThumbnailRenderer(QObject):
         ans = self.ram_cache[book_id]
         if ans is not None:
             return ans
-        if not (db := self.dbref()):
+        if not (db := self.dbref()) or self.shutting_down:
             return None
         thumbnail_as_bytes, cached_timestamp = self.disk_cache[book_id]
         if cached_timestamp is None:  # not in cache
@@ -504,8 +508,8 @@ def run_test(self, t: ThumbnailRendererForTest):
     self.assertIsNotNone(t.cached_or_none(1))
     for q in (2, 3):
         self.assertIsNone(t.cached_or_none(q))
-    ac(2, Qt.GlobalColor.green)
     ac(3, Qt.GlobalColor.blue)
+    ac(2, Qt.GlobalColor.green)
     cimg.fill(Qt.GlobalColor.yellow)
     db.set_cover({3: cimg})
     self.assertIsNone(t.cached_or_none(3))
