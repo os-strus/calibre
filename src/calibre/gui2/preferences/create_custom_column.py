@@ -476,15 +476,16 @@ class CreateCustomColumn(QDialog):
             'If checked, this column will be displayed as HTML in '
             'Book details and the Content server. This can be used to '
             'construct links with the template language. For example, '
-            'the template '
-            '<pre>&lt;big&gt;&lt;b&gt;{title}&lt;/b&gt;&lt;/big&gt;'
-            '{series:| [|}{series_index:| [|]]}</pre>'
+            'the template {0} '
             'will create a field displaying the title in bold large '
             'characters, along with the series, for example <br>"<big><b>'
-            'An Oblique Approach</b></big> [Belisarius [1]]". The template '
-            '<pre>&lt;a href="https://www.beam-ebooks.de/ebook/{identifiers'
-            ':select(beam)}"&gt;Beam book&lt;/a&gt;</pre> '
-            'will generate a link to the book on the Beam e-books site.') + '</p>')
+            'An Oblique Approach</b></big> [Belisarius [1]]". The template {1} '
+            'will generate a link to the book on the Beam e-books site.').format(
+                '<pre>&lt;big&gt;&lt;b&gt;{title}&lt;/b&gt;&lt;/big&gt;'
+                '{series:| [|}{series_index:| [|]]}</pre>',
+                '<pre>&lt;a href="https://www.beam-ebooks.de/ebook/{identifiers'
+                ':select(beam)}"&gt;Beam book&lt;/a&gt;</pre> '
+        ) + '</p>')
         l.addWidget(cch)
         l.addStretch()
         add_row(None, l)
@@ -653,7 +654,7 @@ class CreateCustomColumn(QDialog):
             else:
                 l, dl = _('&Format for numbers:'), (
                     '<p>' + _('Default: Not formatted. For format language details see'
-                    ' <a href="https://docs.python.org/library/string.html#format-string-syntax">the Python documentation</a>'))
+                    ' <a href="{}">the Python documentation</a>').format('https://docs.python.org/library/string.html#format-string-syntax'))
                 if col_type == 'int':
                     self.format_box.setToolTip('<p>' + _(
                         'Examples: The format <code>{0:0>4d}</code> '
