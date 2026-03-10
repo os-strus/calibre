@@ -295,8 +295,8 @@ class FormatterFunction:
 
 class BuiltinFormatterFunction(FormatterFunction):
 
-    def __init__(self):
-        formatter_functions().register_builtin(self)
+    def __init_subclass__(cls):
+        formatter_functions().register_builtin(cls())
 
 
 class BuiltinStrcmp(BuiltinFormatterFunction):
@@ -3841,47 +3841,6 @@ returns `Foo, book 3 of 5`
 
     def evaluate(self, formatter, kwargs, mi, locals, fstring):
         raise ValueError(_('This function cannot be called directly. It is built into the formatter'))
-
-
-_formatter_builtins = [
-    BuiltinAdd(), BuiltinAnd(), BuiltinApproximateFormats(), BuiltinArguments(),
-    BuiltinAssign(),
-    BuiltinAuthorLinks(), BuiltinAuthorSorts(), BuiltinBookCount(),
-    BuiltinBookValues(), BuiltinBooksize(),
-    BuiltinCapitalize(), BuiltinCharacter(), BuiltinCheckYesNo(), BuiltinCeiling(),
-    BuiltinCmp(), BuiltinConnectedDeviceName(), BuiltinConnectedDeviceUUID(), BuiltinContains(),
-    BuiltinCount(), BuiltinCurrentLibraryName(), BuiltinCurrentLibraryPath(),
-    BuiltinCurrentVirtualLibraryName(), BuiltinDateArithmetic(),
-    BuiltinDaysBetween(), BuiltinDivide(), BuiltinEncodeForURL(), BuiltinEval(),
-    BuiltinExtraFileNames(), BuiltinExtraFileSize(), BuiltinExtraFileModtime(),
-    BuiltinFieldListCount(), BuiltinFirstNonEmpty(), BuiltinField(), BuiltinFieldExists(),
-    BuiltinFinishFormatting(), BuiltinFirstMatchingCmp(), BuiltinFloor(),
-    BuiltinFormatDate(), BuiltinFormatDateField(), BuiltinFormatDuration(), BuiltinFormatNumber(),
-    BuiltinFormatsModtimes(),BuiltinFormatsPaths(), BuiltinFormatsPathSegments(),
-    BuiltinFormatsSizes(), BuiltinFractionalPart(),BuiltinFString(), BuiltinGetLink(),
-    BuiltinGetNote(), BuiltinGlobals(), BuiltinHasCover(), BuiltinHasExtraFiles(),
-    BuiltinHasNote(), BuiltinHumanReadable(), BuiltinIdentifierInList(),
-    BuiltinIfempty(), BuiltinIsDarkMode(), BuiltinLanguageCodes(), BuiltinLanguageStrings(),
-    BuiltinInList(), BuiltinIsMarked(), BuiltinListCountMatching(),
-    BuiltinListDifference(), BuiltinListEquals(), BuiltinListIntersection(),
-    BuiltinListitem(), BuiltinListJoin(), BuiltinListRe(),
-    BuiltinListReGroup(), BuiltinListRemoveDuplicates(), BuiltinListSort(),
-    BuiltinListSplit(), BuiltinListUnion(),BuiltinLookup(),
-    BuiltinLowercase(), BuiltinMakeUrl(), BuiltinMakeUrlExtended(), BuiltinMod(),
-    BuiltinMultiply(), BuiltinNot(), BuiltinOndevice(),
-    BuiltinOr(), BuiltinPrint(), BuiltinQueryString(), BuiltinRatingToStars(),
-    BuiltinRange(), BuiltinRawField(), BuiltinRawList(),
-    BuiltinRe(), BuiltinReGroup(), BuiltinRound(), BuiltinSelect(),
-    BuiltinSelectedBooks(), BuiltinSelectedColumn(), BuiltinSeriesSort(),
-    BuiltinSetGlobals(), BuiltinShorten(), BuiltinShowDialog(), BuiltinSortBookIds(),
-    BuiltinStrcat(), BuiltinStrcatMax(), BuiltinWidthFromPages(),
-    BuiltinStrcmp(), BuiltinStrcmpcase(), BuiltinStrInList(), BuiltinStrlen(), BuiltinSubitems(),
-    BuiltinSublist(),BuiltinSubstr(), BuiltinSubtract(), BuiltinSwapAroundArticles(),
-    BuiltinSwapAroundComma(), BuiltinSwitch(), BuiltinSwitchIf(),
-    BuiltinTemplate(), BuiltinTest(), BuiltinTitlecase(), BuiltinToday(),
-    BuiltinToHex(), BuiltinTransliterate(), BuiltinUppercase(), BuiltinUrlsFromIdentifiers(),
-    BuiltinUserCategories(), BuiltinVirtualLibraries(), BuiltinAnnotationCount()
-]
 
 
 class FormatterUserFunction(FormatterFunction):
