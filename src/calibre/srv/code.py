@@ -58,6 +58,37 @@ def service_worker_js(ctx, rd):
     return open(P('content-server/service_worker.js', allow_user_override=False), 'rb')
 
 
+@endpoint('/manifest.json', auth_required=False, cache_control='no-cache')
+def manifest_json(ctx, rd):
+    rd.outheaders['Content-Type'] = 'application/manifest+json; charset=UTF-8'
+    manifest = {
+        'name': 'calibre Content Server',
+        'short_name': 'calibre',
+        'start_url': ctx.url_for(None),
+        'display': 'standalone',
+        'display_override': ['window-controls-overlay'],
+        'icons': [
+            {
+                'src': ctx.url_for('/favicon.svg'),
+                'sizes': 'any',
+                'type': 'image/svg+xml',
+                'purpose': 'any',
+            },
+            {
+                'src': ctx.url_for('/favicon-192.png'),
+                'sizes': '192x192',
+                'type': 'image/png',
+            },
+            {
+                'src': ctx.url_for('/favicon.png'),
+                'sizes': '512x512',
+                'type': 'image/png',
+            },
+        ],
+    }
+    return json_dumps(manifest)
+
+
 # auth_required=True needed for Chrome: https://bugs.launchpad.net/calibre/+bug/1982060
 @endpoint('/ajax-setup', auth_required=True, cache_control='no-cache', postprocess=json)
 def ajax_setup(ctx, rd):
@@ -303,7 +334,13 @@ def category_browse_search_expression(field, item):
         stars = str(search_name).count('★')
         if 1 <= stars <= 5:
             return f'rating:{stars}'
-    return f'{field}:"{escape_search_value(search_name)}"'
+    if item.get('is_hierarchical'):
+        # Use prefix match so an intermediate node (e.g. "History") matches both
+        # "History" and its children such as "History.Military".
+        return f'{field}:"=.{escape_search_value(search_name)}"'
+    # Use exact (=) match to avoid a CONTAINS match where one series/tag name
+    # is a prefix of another (e.g. "Awakening" matching "Awakening Lands").
+    return f'{field}:"={escape_search_value(search_name)}"'
 
 
 def category_browse_items(ctx, rd, db, field, vl):
