@@ -281,6 +281,7 @@ def parse_metadata(raw, namelist, zf):
     import_data = (imported_names, zf, namelist)
 
     names = {}
+    top_level_ann_assigments = [x for x in ast.iter_child_nodes(module) if x.__class__.__name__ == 'AnnAssign']
     for node in top_level_assigments:
         targets = {getattr(t, 'id', None) for t in node.targets}
         targets.discard(None)
@@ -291,14 +292,38 @@ def parse_metadata(raw, namelist, zf):
                 pass
             else:
                 names[x] = val
+    for node in top_level_ann_assigments:
+        if node.value is None:
+            continue
+        x = getattr(node.target, 'id', None)
+        if x is None or x in field_names:
+            continue
+        try:
+            val = convert_node({x}, node.value, import_data=import_data)
+        except Exception:
+            pass
+        else:
+            names[x] = val
 
     def parse_class(node):
         class_assigments = [x for x in ast.iter_child_nodes(node) if x.__class__.__name__ == 'Assign']
+        class_ann_assigments = [x for x in ast.iter_child_nodes(node) if x.__class__.__name__ == 'AnnAssign']
         found = {}
         for node in class_assigments:
             targets = {getattr(t, 'id', None) for t in node.targets}
             targets.discard(None)
             fields = field_names.intersection(targets)
+            if fields:
+                val = convert_node(fields, node.value, names=names, import_data=import_data)
+                for field in fields:
+                    found[field] = val
+        for node in class_ann_assigments:
+            if node.value is None:
+                continue
+            target_id = getattr(node.target, 'id', None)
+            if target_id is None:
+                continue
+            fields = field_names.intersection({target_id})
             if fields:
                 val = convert_node(fields, node.value, names=names, import_data=import_data)
                 for field in fields:
@@ -682,11 +707,11 @@ MV = (0, 7, 53)
 
 class HelloWorld(FileTypePlugin):
 
-    name                = _('name') # Name of the plugin
+    name: str           = _('name') # Name of the plugin
     description         = {1, 2}
     supported_platforms = ['windows', 'osx', 'linux'] # Platforms this plugin will run on
     author              = 'Acme Inc.' # The author of this plugin
-    version             = {1:'a', 'b':2}
+    version: dict[str, int]       = {1:'a', 'b':2}
     file_types          = set(['epub', 'mobi']) # The file types that this plugin will be applied to
     on_postprocess      = True # Run this plugin after conversion is complete
     minimum_calibre_version = MV
@@ -711,11 +736,94 @@ class HelloWorld(FileTypePlugin):
     vals['version'] = (1,2,3)
     assert get_plugin_info(buf.getvalue()) == vals
 
+    # Test: annotated top-level variable used as class attribute value
+    raw2 = b'''\
+from calibre.customize import FileTypePlugin
+
+MV: tuple = (0, 8, 0)
+
+class MyPlugin(FileTypePlugin):
+    name: str = 'TestPlugin'
+    author: str = 'Test Author'
+    version = MV
+    minimum_calibre_version = MV
+    description = 'A test plugin'
+    supported_platforms = ['linux']
+    '''
+    vals2 = {
+        'name': 'TestPlugin', 'description': 'A test plugin',
+        'supported_platforms': ['linux'],
+        'author': 'Test Author', 'version': (0, 8, 0),
+        'minimum_calibre_version': (0, 8, 0)}
+    assert parse_metadata(raw2, None, None) == vals2
+
+    # Test: annotation without value (bare annotation) is ignored gracefully
+    raw3 = b'''\
+from calibre.customize import FileTypePlugin
+
+class MyPlugin(FileTypePlugin):
+    name: str = 'BareAnnot'
+    author: str = 'Some Author'
+    description: str
+    version = (2, 0, 0)
+    minimum_calibre_version = (1, 0, 0)
+    supported_platforms: list = ['windows', 'linux']
+    '''
+    vals3 = {
+        'name': 'BareAnnot', 'description': '',
+        'supported_platforms': ['windows', 'linux'],
+        'author': 'Some Author', 'version': (2, 0, 0),
+        'minimum_calibre_version': (1, 0, 0)}
+    assert parse_metadata(raw3, None, None) == vals3
+
+    # Test: multiple classes, only the one inheriting from a plugin base is used
+    raw4 = b'''\
+from calibre.customize import FileTypePlugin
+
+class Helper:
+    name = 'should-be-ignored'
+    author = 'ignored'
+
+class RealPlugin(FileTypePlugin):
+    name = 'RealPlugin'
+    author = 'Real Author'
+    version = (3, 1, 4)
+    minimum_calibre_version = (0, 9, 42)
+    supported_platforms = ['windows', 'osx', 'linux']
+    description = 'The real one'
+    '''
+    vals4 = {
+        'name': 'RealPlugin', 'description': 'The real one',
+        'supported_platforms': ['windows', 'osx', 'linux'],
+        'author': 'Real Author', 'version': (3, 1, 4),
+        'minimum_calibre_version': (0, 9, 42)}
+    assert parse_metadata(raw4, None, None) == vals4
+
+    # Test: all class attributes are type-annotated
+    raw5 = b'''\
+from calibre.customize import FileTypePlugin
+
+class FullAnnotPlugin(FileTypePlugin):
+    name: str = 'AllAnnotated'
+    description: str = 'fully annotated plugin'
+    supported_platforms: list = ['osx']
+    author: str = 'Annotated Author'
+    version: tuple = (1, 2, 3)
+    minimum_calibre_version: tuple = (0, 9, 42)
+    '''
+    vals5 = {
+        'name': 'AllAnnotated', 'description': 'fully annotated plugin',
+        'supported_platforms': ['osx'],
+        'author': 'Annotated Author', 'version': (1, 2, 3),
+        'minimum_calibre_version': (0, 9, 42)}
+    assert parse_metadata(raw5, None, None) == vals5
+
 # }}}
 
 
 if __name__ == '__main__':
-    # test_parse_metadata()
+    # Run test_parse_metadata() with:
+    # python -c 'import runpy; runpy.run_path("setup/plugins_mirror.py")["test_parse_metadata"]()'
     # import pprint
     # pprint.pprint(get_plugin_info(open(sys.argv[-1], 'rb').read()))
 

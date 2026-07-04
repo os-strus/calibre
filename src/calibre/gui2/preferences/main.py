@@ -334,7 +334,11 @@ class Preferences(QDialog):
         available = self.screen().availableGeometry().size()
         max_width = max(640, available.width() - PREFERENCES_SCREEN_MARGIN)
         max_height = max(480, available.height() - PREFERENCES_SCREEN_MARGIN)
-        return QSize(min(width, max_width), min(height, max_height))
+        calculated = QSize(min(width, max_width), min(height, max_height))
+        saved = self.size()
+        w = min(max(calculated.width(), saved.width()), max_width)
+        h = min(max(calculated.height(), saved.height()), max_height)
+        return QSize(w, h)
 
     def sizeHint(self):
         return QSize(930, 720)
