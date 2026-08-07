@@ -220,6 +220,11 @@ IGNORED_DEPENDENCY_CVES = [
     'CVE-2026-48937',
     'CVE-2026-48617',
     'CVE-2026-48931',
+    'CVE-2026-58040',
+    'CVE-2026-58039',
+    'CVE-2026-58043',
+    'CVE-2026-56847',
+    'CVE-2026-56850',
     # libtiff
     'CVE-2025-8851',  # this is erroneously marked as fixed in the database but no release of libtiff has been made with the fix
     # hyphen
@@ -294,11 +299,11 @@ def main():
 
     if action == 'install':
         # WebEngine is flaky in macOS CI so install rapydscript so bootstrap wont fail
-        npm = 'npm.cmd' if iswindows else 'npm'
-        run(npm, 'install', 'rapydscript-ng')
-        root = subprocess.check_output([npm, 'root']).decode().strip()
+        import sysconfig
+
+        run(sys.executable, '-m', 'pip', 'install', 'rapydscript-ng')
         with open(os.environ['GITHUB_PATH'], 'a') as f:
-            print(os.path.abspath(os.path.join(root, '.bin')), file=f)
+            print(sysconfig.get_path('scripts'), file=f)
 
     if iswindows:
         import runpy
