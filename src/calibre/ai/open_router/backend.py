@@ -5,23 +5,49 @@ import datetime
 import json
 import os
 import re
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import lru_cache
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.request import Request
 
-from calibre.ai import AICapabilities, ChatMessage, ChatMessageType, ChatResponse, NoAPIKey, NoFreeModels
+if TYPE_CHECKING:
+    from calibre.ai.open_router.config import ConfigWidget
+else:
+    ConfigWidget = object
+
+from calibre.ai import (
+    AICapabilities,
+    ChatMessage,
+    ChatMessageType,
+    ChatResponse,
+    ImageData,
+    ImageGenerationOptions,
+    ImageGenerationResult,
+    NoAPIKey,
+    NoFreeModels,
+)
 from calibre.ai.open_router import OpenRouterAI
 from calibre.ai.prefs import decode_secret, pref_for_provider
-from calibre.ai.utils import chat_with_error_handler, develop_text_chat, get_cached_resource, read_streaming_response
+from calibre.ai.utils import (
+    chat_with_error_handler,
+    develop_image_generation,
+    develop_text_chat,
+    get_cached_resource,
+    image_as_data_url,
+    image_data_from_file_path,
+    image_from_data_url,
+    image_generation_with_error_handler,
+    read_json_response,
+    read_streaming_response,
+)
 from calibre.constants import cache_dir
 from calibre.utils.localization import _
 
-module_version = 2  # needed for live updates
+module_version = 3  # needed for live updates
 MODELS_URL = 'https://openrouter.ai/api/v1/models'
 
 
-def pref(key: str, defval: Any = None) -> Any:
+def pref(key: str, defval: Any = None) -> Any:  # noqa: ANN401
     return pref_for_provider(OpenRouterAI.name, key, defval)
 
 
@@ -108,6 +134,8 @@ class Model(NamedTuple):
                 capabilities |= AICapabilities.text_to_text
             if 'image' in arch['output_modalities']:
                 capabilities |= AICapabilities.text_to_image
+                if 'image' in arch['input_modalities']:
+                    capabilities |= AICapabilities.text_and_image_to_image
 
         return Model(
             name=x['name'],
@@ -132,13 +160,13 @@ def parse_models_list(entries: dict[str, Any]) -> dict[str, Model]:
     return ans
 
 
-def config_widget():
+def config_widget() -> ConfigWidget:
     from calibre.ai.open_router.config import ConfigWidget
 
     return ConfigWidget()
 
 
-def save_settings(config_widget):
+def save_settings(config_widget: ConfigWidget) -> None:
     config_widget.save_settings()
 
 
@@ -159,7 +187,7 @@ def free_model_choice(capabilities: AICapabilities = AICapabilities.text_to_text
     gpt_oss_free, gpt_oss_paid = [], []
     claude_free, claude_paid = [], []
 
-    def only(*model_groups: list[Model], sort_key=lambda m: m.created, reverse=True) -> Iterator[Model]:
+    def only(*model_groups: list[Model], sort_key: Callable[[Model], Any] = lambda m: m.created, reverse: bool = True) -> Iterator[Model]:  # noqa: ANN401
         for models in model_groups:
             if models:
                 models.sort(key=sort_key, reverse=reverse)
@@ -215,7 +243,7 @@ def decoded_api_key() -> str:
     return decode_secret(ans)
 
 
-def chat_request(data: dict[str, Any], url='https://openrouter.ai/api/v1/chat/completions') -> Request:
+def chat_request(data: dict[str, Any], url: str = 'https://openrouter.ai/api/v1/chat/completions') -> Request:
     headers = {
         'Authorization': f'Bearer {decoded_api_key()}',
         'Content-Type': 'application/json',
@@ -302,7 +330,91 @@ def text_chat(messages: Iterable[ChatMessage], use_model: str = '') -> Iterator[
     yield from chat_with_error_handler(text_chat_implementation(messages, use_model))
 
 
-def develop(msg: str = '', use_model: str = ''):
+def model_choice_for_images(need_editing: bool) -> Model:
+    model_id, model_name = pref('text_to_image_model', ('', ''))
+    if m := get_available_models().get(model_id):
+        return m
+    caps = AICapabilities.text_to_image
+    if need_editing:
+        caps |= AICapabilities.text_and_image_to_image
+    # Exclude the openrouter/auto meta models as they have no pricing data, so
+    # appear to be free, and route to arbitrary underlying models
+    candidates = [m for m in get_available_models().values() if caps & m.capabilities == caps and not m.id.startswith('openrouter/')]
+    if not candidates:
+        raise ValueError(_('No models capable of image generation found on OpenRouter'))
+    if free := [m for m in candidates if m.pricing.is_free]:
+        return max(free, key=lambda m: m.created)
+    return min(candidates, key=lambda m: (m.pricing.image or m.pricing.output_token, m.pricing.output_token))
+
+
+def parse_image_chat_response(d: dict[str, Any], model_id: str) -> ImageGenerationResult:
+    # See https://openrouter.ai/docs/features/multimodal/image-generation
+    image = None
+    text = ''
+    for choice in d.get('choices') or ():
+        msg = choice.get('message') or {}
+        text += msg.get('content') or ''
+        for img in msg.get('images') or ():
+            if url := (img.get('image_url') or {}).get('url', ''):
+                image = image_from_data_url(url)
+    if image is None:
+        raise ValueError(_('No image was returned by the model: {}').format(model_id))
+    cost = float((d.get('usage') or {}).get('cost') or 0)
+    return ImageGenerationResult(
+        image=image,
+        text=text,
+        cost=cost,
+        currency=_('credits') if cost else '',
+        provider=d.get('provider') or '',
+        model=d.get('model') or model_id,
+        plugin_name=OpenRouterAI.name,
+    )
+
+
+def generate_image_implementation(
+    prompt: str,
+    source_images: Sequence[ImageData] = (),
+    options: ImageGenerationOptions = ImageGenerationOptions(),
+    use_model: str = '',
+) -> ImageGenerationResult:
+    # Note that the OpenRouter API has no standardized way to specify image
+    # parameters such as aspect ratio, so options is currently unused.
+    model_id = use_model or model_choice_for_images(bool(source_images)).id
+    data_collection = pref('data_collection', 'deny')
+    if data_collection not in ('allow', 'deny'):
+        data_collection = 'deny'
+    content: str | list[dict[str, Any]] = prompt
+    if source_images:
+        content = [{'type': 'text', 'text': prompt}]
+        for img in source_images:
+            content.append({'type': 'image_url', 'image_url': {'url': image_as_data_url(img)}})
+    data = {
+        'model': model_id,
+        'messages': [{'role': 'user', 'content': content}],
+        'modalities': ['image', 'text'],
+        'usage': {'include': True},
+        'provider': {'data_collection': data_collection},
+    }
+    rq = chat_request(data)
+    return parse_image_chat_response(read_json_response(rq, OpenRouterAI.name), model_id)
+
+
+def generate_image(
+    prompt: str,
+    source_images: Sequence[ImageData] = (),
+    options: ImageGenerationOptions = ImageGenerationOptions(),
+    use_model: str = '',
+) -> ImageGenerationResult:
+    return image_generation_with_error_handler(lambda: generate_image_implementation(prompt, source_images, options, use_model))
+
+
+def develop_image(prompt: str = '', source_image_path: str = '', use_model: str = '', aspect_ratio: str = 'auto', output_path: str = '') -> None:
+    # calibre-debug -c 'from calibre.ai.open_router.backend import develop_image; develop_image()'
+    source_images = (image_data_from_file_path(source_image_path),) if source_image_path else ()
+    develop_image_generation(generate_image, prompt, source_images, ImageGenerationOptions(aspect_ratio=aspect_ratio), use_model, output_path)
+
+
+def develop(msg: str = '', use_model: str = '') -> None:
     # calibre-debug -c 'from calibre.ai.open_router.backend import *; develop()'
     m = (ChatMessage(msg),) if msg else ()
     develop_text_chat(text_chat, use_model, messages=m)
