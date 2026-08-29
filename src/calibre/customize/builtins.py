@@ -5,6 +5,7 @@ import os
 
 from calibre.ai.anthropic import AnthropicAI
 from calibre.ai.google import GoogleAI
+from calibre.ai.grok import GrokAI
 from calibre.ai.lm_studio import LMStudioAI
 from calibre.ai.ollama import OllamaAI
 from calibre.ai.open_router import OpenRouterAI
@@ -992,6 +993,12 @@ class ActionLLMBook(InterfaceActionBase):
     description = _('Discuss books in your calibre library with AI')
 
 
+class ActionAIGenerateCover(InterfaceActionBase):
+    name = 'AI Generate Cover'
+    actual_plugin = 'calibre.gui2.actions.llm_cover:GenerateAICoverAction'
+    description = _('Generate covers for the books in your calibre library using AI')
+
+
 class ActionFetchNews(InterfaceActionBase):
     name = 'Fetch News'
     actual_plugin = 'calibre.gui2.actions.fetch_news:FetchNewsAction'
@@ -1256,6 +1263,7 @@ plugins += [
     ActionQuickview,
     ActionPolish,
     ActionLLMBook,
+    ActionAIGenerateCover,
     ActionShowBookDetails,
     ActionRestart,
     ActionOpenFolder,
@@ -2087,7 +2095,7 @@ plugins += [
 
 # }}}
 
-plugins.extend((OpenRouterAI, GoogleAI, AnthropicAI, OllamaAI, LMStudioAI, OpenAI, OpenAICompatible))
+plugins.extend((OpenRouterAI, GoogleAI, AnthropicAI, OllamaAI, LMStudioAI, OpenAI, OpenAICompatible, GrokAI))
 
 if __name__ == '__main__':
     # Test load speed

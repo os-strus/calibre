@@ -192,6 +192,8 @@ class ModelDetails(QTextBrowser):
                 price += f'{fmt(m.pricing.output_token * 1e6)}/M {_("output tokens")} '
             if m.pricing.image:
                 price += f'$ {fmt(m.pricing.image * 1e3)}/K {_("input images")} '
+            if m.pricing.image_output:
+                price += f'{fmt(m.pricing.image_output * 1e6)}/M {_("output image tokens")} '
         md = create_markdown_object(extensions=())
         created = qt_from_dt(m.created).date()
         html = f'''
@@ -244,9 +246,9 @@ class SortLoc(QComboBox):
                 now = datetime.datetime.now(datetime.UTC)
                 return lambda x: now - x.created
             case 'cheapest':
-                return lambda x: x.pricing.output_token
+                return lambda x: x.pricing.output_cost
             case 'expensive':
-                return lambda x: -x.pricing.output_token
+                return lambda x: -x.pricing.output_cost
             case 'name':
                 return lambda x: primary_sort_key(x.name)
         return lambda x: ''
@@ -450,6 +452,7 @@ class ConfigWidget(QWidget):
                 ' information for queries, where possible. This adds about two cents to the cost of every request.'
             )
         )
+        l.addRow(aws)
 
         self.reasoning_strat = rs = reasoning_strategy_config_widget(pref('reasoning_strategy', 'auto'), self)
         l.addRow(_('&Reasoning effort:'), rs)
