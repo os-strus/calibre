@@ -22,7 +22,7 @@ from calibre.ai import ChatMessage, ChatMessageType, ChatResponse, Citation, Ima
 from calibre.constants import __version__
 from calibre.customize import AIProviderPlugin
 from calibre.customize.ui import available_ai_provider_plugins
-from calibre.utils.localization import _
+from calibre.utils.localization import _, pgettext
 
 if TYPE_CHECKING:
     from unittest.suite import TestSuite
@@ -437,9 +437,9 @@ def reasoning_strategy_config_widget(current_val: str = 'auto', parent: QWidget 
 
     rs = QComboBox(parent)
     rs.addItem(_('Automatic'), 'auto')
-    rs.addItem(_('Medium'), 'medium')
-    rs.addItem(_('High'), 'high')
-    rs.addItem(_('Low'), 'low')
+    rs.addItem(pgettext('reasoning effort', 'Medium'), 'medium')
+    rs.addItem(pgettext('reasoning effort', 'High'), 'high')
+    rs.addItem(pgettext('reasoning effort', 'Low'), 'low')
     rs.addItem(_('No reasoning'), 'none')
     rs.setCurrentIndex(max(0, rs.findData(current_val)))
     rs.setToolTip(
@@ -457,7 +457,7 @@ def model_choice_strategy_config_widget(current_val: str = 'medium', parent: QWi
 
     ms = QComboBox(parent)
     ms.addItem(_('Cheap and fastest'), 'low')
-    ms.addItem(_('Medium'), 'medium')
+    ms.addItem(pgettext('model choice', 'Medium'), 'medium')
     ms.addItem(_('High quality, expensive and slower'), 'high')
     ms.setCurrentIndex(max(0, ms.findData(current_val)))
     ms.setToolTip('<p>' + _('The model choice strategy controls how a model to query is chosen. Cheaper and faster models give lower quality results.'))
@@ -468,10 +468,10 @@ def image_quality_config_widget(current_val: str = 'auto', parent: QWidget | Non
     from qt.core import QComboBox
 
     q = QComboBox(parent)
-    q.addItem(_('Automatic'), 'auto')
-    q.addItem(_('Low'), 'low')
-    q.addItem(_('Medium'), 'medium')
-    q.addItem(_('High'), 'high')
+    q.addItem(pgettext('image quality', 'Automatic'), 'auto')
+    q.addItem(pgettext('image quality', 'Low'), 'low')
+    q.addItem(pgettext('image quality', 'Medium'), 'medium')
+    q.addItem(pgettext('image quality', 'High'), 'high')
     q.setCurrentIndex(max(0, q.findData(current_val)))
     q.setToolTip('<p>' + _('The quality of generated images. Higher quality images cost more and take longer to generate.'))
     return q
@@ -562,6 +562,61 @@ def find_tests() -> TestSuite:
             self.assertEqual(res.image, ImageData(data=b'image bytes'))
             self.assertEqual(res.model, 'gpt-image-1')
             self.assertRaises(ValueError, parse_image_response, {'data': []}, 'gpt-image-1')
+
+        def test_ai_grok_chat_response_parsing(self) -> None:
+            from calibre.ai.grok.backend import Model, as_chat_responses
+
+            model = Model.from_dict({'id': 'grok-4.6', 'created': 0, 'prompt_text_token_price': 20000, 'completion_text_token_price': 100000})
+            self.assertEqual(model.family_version, 4.6)
+            self.assertFalse(model.supports_reasoning_effort)
+            self.assertTrue(Model.from_dict({'id': 'grok-4.20-0309-reasoning'}).supports_reasoning_effort)
+            self.assertFalse(Model.from_dict({'id': 'grok-4.20-0309-non-reasoning'}).supports_reasoning_effort)
+
+            def p(d: dict[str, Any]) -> list[ChatResponse]:
+                return list(as_chat_responses(d, model))
+
+            r = p({'id': 'c1', 'choices': [{'delta': {'role': 'assistant', 'content': 'Hello', 'reasoning_content': 'Think'}, 'finish_reason': None}]})[0]
+            self.assertEqual(r.content, 'Hello')
+            self.assertEqual(r.reasoning, 'Think')
+            self.assertEqual(r.id, 'c1')
+            self.assertEqual(r.type, ChatMessageType.assistant)
+            r = p({
+                'id': 'c1',
+                'model': 'grok-4.6',
+                'choices': [{'delta': {}, 'finish_reason': 'stop'}],
+                'usage': {'prompt_tokens': 1_000_000, 'completion_tokens': 1_000_000},
+                'citations': ['https://example.com'],
+            })[-1]
+            self.assertTrue(r.has_metadata)
+            self.assertEqual((r.model, r.currency), ('grok-4.6', 'USD'))
+            self.assertAlmostEqual(r.cost, 2 + 10)  # $2/M input and $10/M output tokens
+            self.assertEqual(r.web_links, (WebLink(title='https://example.com', uri='https://example.com'),))
+            r = p({'choices': [{'delta': {}, 'finish_reason': 'content_filter'}]})[0]
+            self.assertIsNotNone(r.exception)
+
+            from calibre.ai.grok.backend import for_assistant
+
+            self.assertEqual(for_assistant(ChatMessage(type=ChatMessageType.developer, query='q')), {'role': 'system', 'content': 'q'})
+            self.assertRaises(ValueError, for_assistant, ChatMessage(type=ChatMessageType.tool, query='q'))
+
+        def test_ai_grok_image_response_parsing(self) -> None:
+            from calibre.ai.grok.backend import Model, parse_image_response
+
+            model = Model.from_dict({'id': 'grok-imagine-image-2.0', 'image_price': 4}, generates_images=True)
+            self.assertTrue(model.generates_images)
+            d = {'data': [{'b64_json': base64.standard_b64encode(b'image bytes').decode(), 'mime_type': 'image/jpeg'}]}
+            res = parse_image_response(d, model)
+            self.assertEqual(res.image, ImageData(data=b'image bytes', mime_type='image/jpeg'))
+            self.assertEqual((res.cost, res.currency), (0.04, 'USD'))
+            self.assertEqual(res.model, 'grok-imagine-image-2.0')
+            self.assertRaises(ValueError, parse_image_response, {'data': []}, model)
+
+            # Grok cannot edit images, check the error is reported via the
+            # result so that the cover dialog can show it, rather than raised
+            from calibre.ai.grok.backend import generate_image
+
+            res = generate_image('a prompt', source_images=(ImageData(data=b'image bytes'),))
+            self.assertIsInstance(res.exception, ValueError)
 
         def test_ai_google_image_response_parsing(self) -> None:
             from calibre.ai import AICapabilities, PromptBlocked, ResultBlocked

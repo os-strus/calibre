@@ -44,10 +44,10 @@ except ImportError:
 
 
 try:
-    from urllib.error import URLError
+    from urllib.error import HTTPError, URLError
     from urllib.request import Request, build_opener, urlopen
 except Exception:
-    from urllib2 import Request, URLError, build_opener, urlopen
+    from urllib2 import HTTPError, Request, URLError, build_opener, urlopen
 # }}}
 
 USER_AGENT = 'calibre mirror'
@@ -69,11 +69,16 @@ def read(url, get_info=False):  # {{{
         ('User-Agent', USER_AGENT),
         ('Accept-Encoding', 'gzip,deflate'),
     ]
-    # Sporadic network failures in rackspace, so retry with random sleeps
+    # Sporadic network failures in rackspace, so retry with random sleeps.
+    # Also retry on HTTP 429 (rate-limit) with exponential backoff: 5s, 10s, 20s, 40s, 60s, 60s, ...
     for i in range(10):
         try:
             res = opener.open(url)
             break
+        except HTTPError as e:
+            if e.code != 429 or i == 9:
+                raise
+            time.sleep(min(5 * (2**i), 60))
         except URLError as e:
             if not isinstance(e.reason, socket.timeout) or i == 9:
                 raise
@@ -432,7 +437,7 @@ def get_plugin_info(raw_zip):
         raw, names = get_plugin_init(zf)
         try:
             return parse_plugin(raw, names, zf)
-        except SyntaxError, TabError, IndentationError:
+        except (SyntaxError, TabError, IndentationError):  # fmt: skip
             with tempfile.NamedTemporaryFile(suffix='.zip') as f:
                 f.write(raw_zip)
                 f.flush()
@@ -511,12 +516,19 @@ def atomic_write(raw, name):
         os.rename(f.name, name)
 
 
-def fetch_plugins(old_index):
-    ans = {}
-    pool = ThreadPool(processes=10)
-    entries = tuple(parse_index())
-    if not entries:
+def fetch_plugins(old_index, thread_id=None):
+    all_entries = tuple(parse_index())
+    if not all_entries:
         raise SystemExit('Could not find any plugins, probably the markup on the MR index page has changed')
+    if thread_id is not None:
+        entries = tuple(e for e in all_entries if e.thread_id == thread_id)
+        if not entries:
+            raise SystemExit(f'No plugin with thread_id {thread_id!r} found in the MR index')
+        ans = dict(old_index)
+    else:
+        entries = all_entries
+        ans = {}
+    pool = ThreadPool(processes=min(10, len(entries)))
     with closing(pool):
         result = pool.map(partial(parallel_fetch, old_index), entries)
     for entry, plugin in zip(entries, result):
@@ -535,11 +547,12 @@ def fetch_plugins(old_index):
             os.rename(src, plugin['file'])
     raw = bz2.compress(json.dumps(ans, sort_keys=True, indent=4, separators=(',', ': ')).encode('utf-8'))
     atomic_write(raw, PLUGINS)
-    # Cleanup any extra .zip files
-    all_plugin_files = {p['file'] for p in ans.values()}
-    extra = set(glob.glob('*.zip')) - all_plugin_files
-    for x in extra:
-        os.unlink(x)
+    if thread_id is None:
+        # Cleanup any extra .zip files only on full sync
+        all_plugin_files = {p['file'] for p in ans.values()}
+        extra = set(glob.glob('*.zip')) - all_plugin_files
+        for x in extra:
+            os.unlink(x)
     return ans
 
 
@@ -711,6 +724,7 @@ def main():
     p.add_argument('plugin_path', nargs='?', default='', help='Path to plugin zip file to parse')
     WORKDIR = '/srv/plugins' if IS_PRODUCTION else '/t/plugins'
     p.add_argument('-o', '--output-dir', default=WORKDIR, help='Where to place the mirrored plugins. Default is: ' + WORKDIR)
+    p.add_argument('--thread-id', default=None, help='Only download/update the plugin with this thread ID (e.g. 1234 or 1234-deprecated)')
     args = p.parse_args()
     if args.plugin_path:
         return parse_single_plugin(args.plugin_path)
@@ -724,7 +738,7 @@ def main():
     stats = update_stats()
     try:
         plugins_index = load_plugins_index()
-        plugins_index = fetch_plugins(plugins_index)
+        plugins_index = fetch_plugins(plugins_index, thread_id=args.thread_id)
         create_index(plugins_index, stats)
     except KeyboardInterrupt:
         raise SystemExit('Exiting on user interrupt')

@@ -95,6 +95,20 @@ class ImageGenerationResult(NamedTuple):
     plugin_name: str = ''
 
 
+class StructuredOutputResult(NamedTuple):
+    data: Any = None  # instance of the schema class passed in, or None on error
+    raw: str = ''  # the raw JSON text returned by the model, useful for debugging
+
+    exception: Exception | None = None
+    error_details: str = ''  # can be traceback or error message from HTTP response
+
+    cost: float = 0
+    currency: str = ''  # no currency means unknown
+    provider: str = ''
+    model: str = ''
+    plugin_name: str = ''
+
+
 class NoFreeModels(Exception):
     pass
 
@@ -179,7 +193,7 @@ class ResultBlocked(ValueError):
 
 
 class AICapabilities(Flag):
-    none = auto()
+    none = 0
     text_to_text = auto()
     text_to_image = auto()
     text_and_image_to_image = auto()
