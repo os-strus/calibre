@@ -30,6 +30,7 @@ from calibre.ai import (
 from calibre.ai.open_router import OpenRouterAI
 from calibre.ai.prefs import decode_secret, pref_for_provider
 from calibre.ai.structured import (
+    OnText,
     develop_structured_output,
     messages_for_structured_output,
     strict_json_schema,
@@ -77,6 +78,15 @@ def human_readable_model_name(model_id: str) -> str:
     if m := get_available_models().get(model_id):
         model_id = m.name_without_creator_preserving_case
     return model_id
+
+
+def configured_model_name(for_image: bool = False) -> str:
+    try:
+        if for_image:
+            return model_choice_for_images(False).id
+        return next(model_choice_for_text()).id
+    except Exception:
+        return ''
 
 
 class Pricing(NamedTuple):
@@ -384,7 +394,9 @@ def structured_output_data(messages: Iterable[ChatMessage], models: Sequence[Mod
     return data
 
 
-def generate_structured_output_implementation(prompt: str, schema: type, instructions: str = '', use_model: str = '') -> StructuredOutputResult:
+def generate_structured_output_implementation(
+    prompt: str, schema: type, instructions: str = '', use_model: str = '', on_text: OnText | None = None
+) -> StructuredOutputResult:
     models, model_id = models_for_chat(use_model)
     if use_model:
         m = get_available_models().get(use_model)
@@ -394,13 +406,13 @@ def generate_structured_output_implementation(prompt: str, schema: type, instruc
     else:
         native = supports_structured_output(models[0])
     if not native:
-        return structured_output_via_prompt(text_chat_implementation, prompt, schema, instructions, use_model, OpenRouterAI.name)
+        return structured_output_via_prompt(text_chat_implementation, prompt, schema, instructions, use_model, OpenRouterAI.name, on_text)
     data = structured_output_data(messages_for_structured_output(prompt, instructions), models, model_id, schema)
-    return structured_output_from_chat(responses_from_stream(chat_request(data)), schema, OpenRouterAI.name)
+    return structured_output_from_chat(responses_from_stream(chat_request(data)), schema, OpenRouterAI.name, on_text)
 
 
-def generate_structured_output(prompt: str, schema: type, instructions: str = '', use_model: str = '') -> StructuredOutputResult:
-    return structured_output_with_error_handler(lambda: generate_structured_output_implementation(prompt, schema, instructions, use_model))
+def generate_structured_output(prompt: str, schema: type, instructions: str = '', use_model: str = '', on_text: OnText | None = None) -> StructuredOutputResult:
+    return structured_output_with_error_handler(lambda: generate_structured_output_implementation(prompt, schema, instructions, use_model, on_text))
 
 
 def model_choice_for_images(need_editing: bool) -> Model:
