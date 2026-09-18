@@ -53,6 +53,13 @@ if TYPE_CHECKING:
     from calibre.ai.open_router.backend import Model as AIModel
 
 
+def backend() -> Any:  # noqa: ANN401
+    for plugin in available_ai_provider_plugins():
+        if plugin.name == OpenRouterAI.name:
+            return plugin.builtin_live_module
+    raise ValueError(f'Could not find the {OpenRouterAI.name} plugin')
+
+
 class Model(QWidget):
     select_model = pyqtSignal(str, bool)
 
@@ -78,7 +85,7 @@ class Model(QWidget):
         b.clicked.connect(self._select_model)
 
     def set(self, model_id: str, model_name: str) -> None:
-        self.model_id, self.model_name = model_id, model_name
+        self.model_id, self.model_name = model_id, model_name or _('Automatic')
         self.la.setText(self.model_name)
 
     def _select_model(self) -> None:
@@ -88,12 +95,7 @@ class Model(QWidget):
 class ModelsModel(QAbstractListModel):
     def __init__(self, capabilities: AICapabilities, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        for plugin in available_ai_provider_plugins():
-            if plugin.name == OpenRouterAI.name:
-                self.backend = plugin.builtin_live_module
-                break
-        else:
-            raise ValueError('Could not find OpenRouterAI plugin')
+        self.backend = backend()
         self.all_models_map = self.backend.get_available_models()
         self.all_models = tuple(filter(lambda m: capabilities & m.capabilities == capabilities, self.all_models_map.values()))
         self.sorts = tuple(primary_sort_key(m.name) for m in self.all_models)
@@ -477,6 +479,34 @@ class ConfigWidget(QWidget):
         im.select_model.connect(self.select_model)
         l.addRow(_('Model for &image tasks:'), im)
 
+    def restrict_to_purpose(self, purpose: AICapabilities) -> None:
+        # Hide the settings irrelevant to the given purpose, e.g. the image
+        # model choice when configuring the AI for text only use. The data
+        # collection setting stays as it applies to image requests too.
+        self._restricted_purpose = purpose
+        lay = self.layout()
+        assert isinstance(lay, QFormLayout)
+        lay.setRowVisible(self.image_model, purpose.supports_text_to_image)
+        for w in (self.model_strategy, self._allow_web_searches, self.reasoning_strat, self.text_model):
+            lay.setRowVisible(w, purpose.supports_text_to_text)
+
+    def set_model(self, model_id: str, purpose: AICapabilities) -> bool:
+        # Make the specified model be used for the specified purpose,
+        # returning False if OpenRouter does not offer that model.
+        target = self.image_model if purpose.supports_text_to_image else self.text_model
+        model_name = model_id
+        try:
+            available = backend().get_available_models()
+        except Exception:
+            available = None  # the list of models could not be fetched, trust the caller
+        if available is not None:
+            m = available.get(model_id)
+            if m is None:
+                return False
+            model_name = m.name
+        target.set(model_id, model_name)
+        return True
+
     def select_model(self, model_id: str, for_text: bool) -> None:
         model_choice_target = cast(Model, self.sender())
         caps = AICapabilities.text_to_text if for_text else AICapabilities.text_to_image
@@ -508,9 +538,10 @@ class ConfigWidget(QWidget):
             'reasoning_strategy': self.reasoning_strategy,
             'data_collection': self.data_collection,
         }
-        if self.text_model.model_id:
+        purpose = getattr(self, '_restricted_purpose', None)
+        if self.text_model.model_id and (purpose is None or purpose.supports_text_to_text):
             ans['text_model'] = (self.text_model.model_id, self.text_model.model_name)
-        if self.image_model.model_id:
+        if self.image_model.model_id and (purpose is None or purpose.supports_text_to_image):
             ans['text_to_image_model'] = (self.image_model.model_id, self.image_model.model_name)
         return ans
 
