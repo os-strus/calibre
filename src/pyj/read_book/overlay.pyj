@@ -9,7 +9,7 @@ from uuid import short_uuid
 from book_list.book_details import CLASS_NAME as BD_CLASS_NAME, render_metadata
 from book_list.globals import get_session_data
 from book_list.library_data import (
-    current_library_id, set_book_metadata, sync_library_books
+    set_book_metadata, sync_library_books
 )
 from book_list.router import home
 from book_list.theme import get_color
@@ -17,6 +17,7 @@ from book_list.top_bar import create_top_bar
 from book_list.ui import query_as_href, show_panel
 from dom import clear, ensure_id, set_css, svgicon
 from modals import error_dialog, question_dialog
+from read_book.book_storage import get_book_storage
 from read_book.bookmarks import create_bookmarks_panel
 from read_book.chrome import apply_viewer_chrome_colors, viewer_chrome_colors
 from read_book.globals import is_dark_theme, runtime, ui_operations
@@ -334,6 +335,18 @@ class MainOverlay:  # {{{
                 reload_actions.appendChild(ac(_('Edit book'), _('Edit this book'), self.overlay.view.edit_book, 'edit'))
         else:
             reload_actions = E.ul(sync_action, delete_action, reload_action)
+        book_storage = get_book_storage(self.overlay.view?.book)
+        if book_storage and Object.keys(book_storage.data).length:
+            reload_actions.appendChild(ac(
+                _('Clear book storage'), _('Clear the data stored by scripts in this book'), def ():
+                    question_dialog(
+                        _('Are you sure?'), _('Are you sure you want to clear all data stored by scripts in this book?'),
+                        def (yes):
+                            if yes:
+                                self.overlay.hide()
+                                self.overlay.view.clear_book_storage()
+                    )
+                , 'eraser'))
 
         bookmarks_action = ac(_('Bookmarks'), _('Browse all bookmarks'), self.overlay.show_bookmarks, 'bookmark')
         highlights_action = ac(
@@ -1066,13 +1079,12 @@ class Overlay:
                     self.hide_current_panel()
                     return
                 if data.type is 'update_cached_book_metadata' and data.metadata:
-                    if current_library_id() is data.library_id:
-                        mi = data.metadata
-                        book_id = int(data.book_id)
-                        set_book_metadata(book_id, mi)
-                        book = self.view.book
-                        if book and book.key[0] is data.library_id and book.key[1] is book_id:
-                            ui_operations.update_metadata(book, mi)
+                    mi = data.metadata
+                    book_id = int(data.book_id)
+                    set_book_metadata(book_id, mi, data.library_id)
+                    book = self.view.book
+                    if book and book.key[0] is data.library_id and book.key[1] is book_id:
+                        ui_operations.update_metadata(book, mi)
 
             if not runtime.is_standalone_viewer and lname:
                 container.lastChild.appendChild(E.div(

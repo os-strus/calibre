@@ -94,12 +94,148 @@ class AddRemoveTest(BaseTest):
         del cache
         # Test that the old interface also shows correct format data
         db = self.init_old()
-        ae(db.formats(3, index_is_id=True), ','.join(['FMT1', 'FMTX', 'REPL', 'REPL2']))
+        ae(db.formats(3, index_is_id=True), ','.join(['FMT1', 'FMTX', 'REPL', 'REPL2']))  # noqa: FLY002
         ae(db.format(3, 'FMT1', index_is_id=True), NF)
         ae(db.format(1, 'FMT1', index_is_id=True), NF)
 
         db.close()
         del db
+
+    # }}}
+
+    def test_add_format_categories(self):  # {{{
+        "Test that adding a format keeps the cached formats category correct"
+        from io import BytesIO
+
+        cache = self.init_cache()
+
+        def shown():
+            return {(t.original_name or t.name, t.count) for t in cache.get_categories()['formats']}
+
+        def check(label):
+            cached = shown()
+            # Throw the cache away and compute the category again, which is what
+            # the cached value must have agreed with
+            cache.categories_cache.invalidate_all()
+            self.assertEqual(shown(), cached, f'the cached formats category is stale after {label}')
+
+        cache.get_categories()  # so that there is a cached category to go stale
+        check('no change')
+
+        # A format the library has not seen before must appear
+        self.assertTrue(cache.add_format(1, 'ZZZNEW', BytesIO(b'xxxx')))
+        self.assertIn(('ZZZNEW', 1), shown())
+        check('adding a new format')
+
+        # A second book with it must raise the count
+        self.assertTrue(cache.add_format(2, 'ZZZNEW', BytesIO(b'yyyy')))
+        self.assertIn(('ZZZNEW', 2), shown())
+        check('adding the same format to another book')
+
+        # Replacing a format, and a name differing only in case, change nothing
+        before = shown()
+        self.assertTrue(cache.add_format(1, 'ZZZNEW', BytesIO(b'zzzzzz'), replace=True))
+        self.assertEqual(before, shown())
+        self.assertTrue(cache.add_format(1, 'zzznew', BytesIO(b'aaaa'), replace=True))
+        self.assertEqual(before, shown())
+        self.assertFalse(cache.add_format(1, 'ZZZNEW', BytesIO(b'bbbb'), replace=False))
+        self.assertEqual(before, shown())
+        check('replacing a format')
+
+        # Removing it from every book must make the item disappear
+        cache.remove_formats({1: ['ZZZNEW'], 2: ['ZZZNEW']})
+        self.assertNotIn('ZZZNEW', {name for name, count in shown()})
+        check('removing the format from every book')
+
+        # A failure part way through must not leave the category stale
+        table = cache.fields['size'].table
+        orig = table.update_sizes
+
+        def raise_error(size_map):
+            raise RuntimeError('simulated failure after the formats table changed')
+
+        table.update_sizes = raise_error
+        try:
+            with self.assertRaises(RuntimeError):
+                cache.add_format(1, 'ZZZFAIL', BytesIO(b'xxxx'))
+        finally:
+            table.update_sizes = orig
+        check('a failure part way through adding a format')
+
+        # A failure inside update_fmt(), after the in memory tables changed but
+        # before the database did, must not leave the category stale either
+        from unittest.mock import patch
+
+        orig_execute = cache.backend.execute
+
+        def failing_execute(sql, *args, **kw):
+            if sql.startswith('INSERT OR REPLACE INTO data'):
+                raise RuntimeError('simulated failure while updating the formats table')
+            return orig_execute(sql, *args, **kw)
+
+        with patch.object(cache.backend, 'execute', failing_execute), self.assertRaises(RuntimeError):
+            cache.add_format(2, 'ZZZFAIL2', BytesIO(b'xxxx'))
+        check('a failure inside updating the formats table')
+
+    # }}}
+
+    def test_format_writes_report_changes(self):  # {{{
+        "Test that the quiet writes of formats and new books report everything they change"
+        from calibre.ebooks.metadata.book.base import Metadata
+
+        cache = self.init_cache()
+        cc = cache.categories_cache
+
+        def all_shown():
+            return {k: [(t.original_name or t.name, t.count) for t in v] for k, v in cache.get_categories().items()}
+
+        def check(label):
+            cached = all_shown()
+            cache.categories_cache.invalidate_all()
+            self.assertEqual(all_shown(), cached, f'the cached categories are stale after {label}')
+
+        all_shown()
+        global_version = cc.global_version
+
+        # Adding a format reports the size of the book, as a Virtual library can
+        # depend on it, and does not throw away every cached category
+        size_version = cc.field_versions.get('size', 0)
+        self.assertTrue(cache.add_format(1, 'ZZZNEW', BytesIO(b'xxxx')))
+        self.assertGreater(cc.field_versions.get('size', 0), size_version)
+        self.assertEqual(global_version, cc.global_version)
+        check('adding a format')
+
+        # Restoring a format from the trash behaves the same as adding it
+        cache.remove_formats({1: ['ZZZNEW']})
+        all_shown()
+        global_version, size_version = cc.global_version, cc.field_versions.get('size', 0)
+        cache.move_format_from_trash(1, 'ZZZNEW')
+        self.assertIn('ZZZNEW', cache.formats(1))
+        self.assertIn(('ZZZNEW', 1), [(t.name, t.count) for t in cache.get_categories()['formats']])
+        self.assertGreater(cc.field_versions.get('size', 0), size_version)
+        self.assertEqual(global_version, cc.global_version)
+        check('restoring a format from the trash')
+
+        # Creating a book reports the fields it writes directly, which a Virtual
+        # library can depend on
+        books_table_fields = ('size', 'sort', 'series_index', 'author_sort', 'uuid', 'cover')
+        # Links are only set for items that already exist
+        cache.set_field('authors', {2: ('Linked Author',)})
+        all_shown()
+        global_version, authors_version = cc.global_version, cc.field_versions.get('authors', 0)
+        before = {f: cc.field_versions.get(f, 0) for f in books_table_fields}
+        mi = Metadata('Linked book', authors=('Linked Author',))
+        mi.link_maps = {'authors': {'Linked Author': 'https://example.com/linked'}}
+        ids, duplicates = cache.add_books([(mi, {'ZZZNEW': BytesIO(b'yyyy')})])
+        self.assertEqual(1, len(ids))
+        self.assertEqual(global_version, cc.global_version)
+        for f in books_table_fields:
+            self.assertGreater(cc.field_versions.get(f, 0), before[f], f'creating a book did not report {f}')
+        self.assertEqual('https://example.com/linked', cache.get_link_map('authors').get('Linked Author'))
+        # Setting the link must force the whole authors category to be
+        # recomputed, set_field() alone would have reported only some items
+        self.assertIsNone(cc.changes_since('authors', authors_version)[0])
+        check('creating a book with links')
 
     # }}}
 
