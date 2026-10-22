@@ -37,6 +37,10 @@ def current_library_id():
     return q.library_id or get_interface_data().default_library_id
 
 
+def library_name(library_id):
+    return get_interface_data().library_map[library_id] or library_id
+
+
 def all_libraries():
     interface_data = get_interface_data()
     lids = sorted(interface_data.library_map, key=def (x): return interface_data.library_map[x];)
@@ -372,6 +376,12 @@ def set_book_metadata(book_id, value, library_id):
     # The cache only holds books from the loaded library
     if library_id is library_data.for_library:
         library_data.metadata[book_id] = value
+
+
+def set_fts_enabled(library_id, enabled):
+    # Only the data of the loaded library is held
+    if library_id is library_data.for_library:
+        library_data.fts_enabled = enabled
 
 
 def loaded_book_ids():
