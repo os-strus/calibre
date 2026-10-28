@@ -2,11 +2,12 @@
 # License: GPLv3 Copyright: 2013, Kovid Goyal <kovid at kovidgoyal.net>
 
 import numbers
-from collections import namedtuple
+from collections.abc import Callable
 from copy import copy, deepcopy
 from functools import partial
 from itertools import product
 from operator import attrgetter, methodcaller
+from typing import Any, NamedTuple
 
 from qt.core import (
     QAbstractItemView,
@@ -57,11 +58,18 @@ from calibre.utils.localization import _, get_lang, ngettext
 class BasicSettings(QWidget):  # {{{
     changed_signal = pyqtSignal()
 
+    class Setting(NamedTuple):
+        name: str
+        prefs: dict[str, Any]
+        widget: QWidget
+        getter: Callable
+        setter: Callable
+        initial_value: Any
+
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
         self.settings = {}
         self._prevent_changed = False
-        self.Setting = namedtuple('Setting', 'name prefs widget getter setter initial_value')
 
     def __call__(self, name, widget=None, getter=None, setter=None, prefs=None):
         prefs = prefs or tprefs
@@ -213,6 +221,18 @@ class EditorSettings(BasicSettings):  # {{{
         lf = l.labelForField(h)
         assert isinstance(lf, QLabel)
         lf.setBuddy(theme)
+
+        cp = self.choices_widget(
+            'editor_css_color_preview',
+            {'none': _('No preview'), 'underline': _('Underline in the color'), 'background': _('Background in the color')},
+            'underline',
+            'none',
+        )
+        cp.setToolTip(
+            '<p>'
+            + _('How to show a preview of colors such as red, #ff0000 or rgb(255, 0, 0) in CSS. Hovering the mouse over a color always shows a swatch of it.')
+        )
+        l.addRow(_('CSS color pre&view:'), cp)
 
         tw = self('editor_tab_stop_width')
         tw.setMinimum(2), tw.setSuffix(_(' characters')), tw.setMaximum(20)

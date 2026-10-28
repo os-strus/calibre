@@ -6,7 +6,7 @@ import unicodedata
 import weakref
 from collections import OrderedDict, deque
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import partial
 
 import regex
@@ -14,7 +14,7 @@ import regex
 from calibre.constants import DEBUG, preferred_encoding
 from calibre.db.utils import force_to_bool
 from calibre.utils.config_base import prefs
-from calibre.utils.date import UNDEFINED_DATE, dt_as_local, now, parse_date
+from calibre.utils.date import UNDEFINED_DATE, dt_as_local, local_tz, now, parse_date
 from calibre.utils.icu import ascii_primary_no_punc_matcher, primary_contains, primary_no_punc_contains, sort_key
 from calibre.utils.icu import lower as icu_lower
 from calibre.utils.localization import _, canonicalize_lang, lang_map
@@ -66,10 +66,8 @@ def _match(query, value, matchkind, use_primary_find_in_search=True, case_sensit
         # which are slow in larger libraries, for ASCII only text
         ascii_matcher = ascii_primary_no_punc_matcher(query)
         if ascii_matcher is None:
-            for t in value:
-                if primary_no_punc_contains(query, icu_lower(t)):
-                    return True
-            return False
+            return any(primary_no_punc_contains(query, icu_lower(t)) for t in value)
+        # ruff: ignore[reimplemented-builtin]
         for t in value:
             if ascii_matcher(t) if t.isascii() else primary_no_punc_contains(query, icu_lower(t)):
                 return True
@@ -109,6 +107,12 @@ def _match(query, value, matchkind, use_primary_find_in_search=True, case_sensit
 # }}}
 
 
+def months_ago(dt, num):
+    """Return the first day of the month that is num months before the month of dt"""
+    year, month = divmod(dt.year * 12 + dt.month - 1 - num, 12)
+    return dt.replace(year=year, month=month + 1, day=1)
+
+
 class DateSearch:  # {{{
     def __init__(self):
         self.operators = OrderedDict((
@@ -119,10 +123,32 @@ class DateSearch:  # {{{
             ('>', self.gt),
             ('<', self.lt),
         ))
+        # NOTE: The following strings are keywords used in date searches, such
+        # as date:thismonth or date:>3daysago. Their translations must be
+        # single words without spaces.
         self.local_today = {'_today', 'today', icu_lower(_('today'))}
         self.local_yesterday = {'_yesterday', 'yesterday', icu_lower(_('yesterday'))}
         self.local_thismonth = {'_thismonth', 'thismonth', icu_lower(_('thismonth'))}
-        self.daysago_pat = regex.compile(r'({}|daysago|_daysago)$'.format(_('daysago')), flags=regex.UNICODE | regex.VERSION1)
+        self.local_lastmonth = {'_lastmonth', 'lastmonth', icu_lower(_('lastmonth'))}
+        self.local_thisyear = {'_thisyear', 'thisyear', icu_lower(_('thisyear'))}
+        self.local_lastyear = {'_lastyear', 'lastyear', icu_lower(_('lastyear'))}
+        self.ago_pats = tuple(
+            (regex.compile(rf'({regex.escape(local)}|{unit}|_{unit})$', flags=regex.UNICODE | regex.VERSION1), unit)
+            for local, unit in ((_('daysago'), 'daysago'), (_('monthsago'), 'monthsago'), (_('yearsago'), 'yearsago'))
+        )
+        # dateutil reads month.year and year.month as decimal numbers
+        self.dotted_month_year_pat = regex.compile(r'(?:\d{1,2}\.\d{4}|\d{4}\.\d{1,2})')
+
+    def specified_field_count(self, query):
+        # Parse with two defaults that differ in every field, any field that
+        # comes out the same in both was present in the query. The defaults
+        # are in leap years and in months with 31 days so that every valid
+        # day and month in the query can be combined with them.
+        a = parse_date(query, as_utc=False, default=datetime(2000, 1, 1, tzinfo=local_tz))
+        b = parse_date(query, as_utc=False, default=datetime(2004, 3, 2, tzinfo=local_tz))
+        if a.month != b.month:
+            return 1
+        return 2 if a.day != b.day else 3
 
     def eq(self, dbdate, query, field_count):
         if dbdate.year == query.year:
@@ -202,24 +228,43 @@ class DateSearch:  # {{{
         elif query in self.local_thismonth:
             qd = now()
             field_count = 2
+        elif query in self.local_lastmonth:
+            qd = months_ago(now(), 1)
+            field_count = 2
+        elif query in self.local_thisyear:
+            qd = now()
+            field_count = 1
+        elif query in self.local_lastyear:
+            qd = months_ago(now(), 12)
+            field_count = 1
         else:
-            m = self.daysago_pat.search(query)
+            m = unit = None
+            for pat, unit in self.ago_pats:
+                if (m := pat.search(query)) is not None:
+                    break
             if m is not None:
                 num = query[: -len(m.group(1))]
                 try:
-                    qd = now() - timedelta(int(num))
-                except Exception:
+                    num = int(num)
+                except ValueError:
                     raise ParseException(_('Number conversion error: {0}').format(num))
-                field_count = 3
+                try:
+                    if unit == 'daysago':
+                        qd, field_count = now() - timedelta(num), 3
+                    elif unit == 'monthsago':
+                        qd, field_count = months_ago(now(), num), 2
+                    else:
+                        qd, field_count = months_ago(now(), 12 * num), 1
+                except ValueError, OverflowError:
+                    raise ParseException(_('Date out of range: {0}').format(query))
             else:
+                if self.dotted_month_year_pat.fullmatch(query) is not None:
+                    query = query.replace('.', '-')
                 try:
                     qd = parse_date(query, as_utc=False)
+                    field_count = self.specified_field_count(query)
                 except Exception:
                     raise ParseException(_('Date conversion error: {0}').format(query))
-                if '-' in query:
-                    field_count = query.count('-') + 1
-                else:
-                    field_count = query.count('/') + 1
 
         for v, book_ids in field_iter():
             if isinstance(v, (str, bytes)):
@@ -329,8 +374,13 @@ class NumericSearch:  # {{{
             except Exception:
                 raise ParseException(_('Non-numeric value in query: {0}').format(query))
             if dt == 'half-rating':
-                q = round(q * 2)
-                cast = int
+                try:
+                    q = round(q * 2)
+                    cast = int
+                except ValueError, OverflowError:
+                    # nan or inf cannot be rounded, compare them as floats so
+                    # that nan matches nothing and inf compares as expected
+                    q *= 2
 
         qfalse = query == 'false'
         for val, book_ids in field_iter():
@@ -833,19 +883,26 @@ class Parser(SearchQueryParser):  # {{{
         current_candidates = set(candidates)
 
         try:
-            rating_query = int(float(query)) * 2
-        except Exception:
-            rating_query = None
-
-        try:
-            int_query = int(float(query))
-        except Exception:
-            int_query = None
-
-        try:
             float_query = float(query)
-        except Exception:
+        except ValueError:
             float_query = None
+        # Only whole numbers can match int columns. Ratings are stored as twice
+        # the number of stars and are matched the same way num_search() does
+        # for queries that specify the field: half star columns round to the
+        # nearest half star, other columns only match whole stars.
+        int_query = half_rating_query = None
+        if float_query is not None:
+            try:
+                # Parse directly to avoid losing precision for large values
+                int_query = int(query)
+            except ValueError:
+                if float_query.is_integer():
+                    int_query = int(float_query)
+            try:
+                half_rating_query = round(float_query * 2)
+            except ValueError, OverflowError:
+                # nan or inf cannot match any rating
+                half_rating_query = None
 
         for location in locations:
             current_candidates -= matches
@@ -867,9 +924,14 @@ class Parser(SearchQueryParser):  # {{{
 
             dt = field_metadata.get(location, {}).get('datatype', None)
             if dt == 'rating':
-                if rating_query is not None:
+                if field_metadata[location]['display'].get('allow_half_stars'):
+                    if half_rating_query is not None:
+                        for val, book_ids in self.field_iter(location, current_candidates):
+                            if val == half_rating_query:
+                                matches |= book_ids
+                elif int_query is not None:
                     for val, book_ids in self.field_iter(location, current_candidates):
-                        if val == rating_query:
+                        if val is not None and val // 2 == int_query:
                             matches |= book_ids
                 continue
 

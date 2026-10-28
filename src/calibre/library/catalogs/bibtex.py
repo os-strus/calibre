@@ -4,21 +4,18 @@
 import numbers
 import os
 import re
-from collections import namedtuple
 from datetime import datetime as _datetime
 
 from calibre import strftime
 from calibre.customize import CatalogPlugin
 from calibre.customize.conversion import DummyReporter
 from calibre.ebooks.metadata import format_isbn
-from calibre.library.catalogs import FIELDS, TEMPLATE_ALLOWED_FIELDS
+from calibre.library.catalogs import FIELDS, TEMPLATE_ALLOWED_FIELDS, Option
 from calibre.utils.localization import _
 
 
 class BIBTEX(CatalogPlugin):
     "BIBTEX catalog generator"
-
-    Option = namedtuple('Option', 'option, default, dest, action, help')
 
     name = 'Catalog_BIBTEX'
     description = _('BIBTEX catalog generator')
@@ -245,10 +242,7 @@ class BIBTEX(CatalogPlugin):
             for field in ['title', 'authors', 'publisher']:
                 if entry[field] is None or len(entry[field]) == 0:
                     return False
-            if entry['pubdate'] is None:
-                return False
-            else:
-                return True
+            return entry['pubdate'] is not None
 
         def make_bibtex_citation(entry, template_citation, bibtexclass):
 

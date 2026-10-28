@@ -10,6 +10,7 @@ from time import time
 from calibre.db.tests.base import BaseTest
 from calibre.utils.date import utc_tz
 from calibre.utils.localization import calibre_langcode_to_name
+from calibre.utils.search_query_parser import ParseException
 
 
 def p(x):
@@ -397,6 +398,23 @@ class ReadingTest(BaseTest):
         self.assertEqual(cache.search('#rating:1.5'), {1})
         self.assertEqual(cache.search('#rating:>4'), {3})
         self.assertEqual(cache.search('#rating:2'), {2})
+        self.assertEqual(cache.search('#rating:nan'), set())
+        self.assertEqual(cache.search('#rating:inf'), set())
+        self.assertEqual(cache.search('#rating:<inf'), {1, 2, 3})
+        self.assertEqual(cache.search('#rating:>1e400'), set())
+        # Unqualified numbers must match ratings the same way as qualified ones
+        self.assertEqual(cache.search('1.5'), {1})
+        self.assertEqual(cache.search('4.5'), {3})
+        self.assertEqual(cache.search('2'), {1, 2, 3})
+        self.assertEqual(cache.search('2.2'), {2})
+        self.assertEqual(cache.search('0.2'), set())
+        self.assertEqual(cache.search('nan'), set())
+        self.assertEqual(cache.search('1e400'), set())
+        for q in ('1.3', '1.5', '2', '2.2', '2.5', '4.5', '4.6'):
+            # Whole star columns reject non-integer qualified queries
+            expected = cache.search('rating:' + q) if q.isdigit() else set()
+            expected |= cache.search('#rating:' + q)
+            self.assertEqual(cache.search(q), expected, q)
 
         # template searches
         # Test text search
@@ -411,6 +429,56 @@ class ReadingTest(BaseTest):
         )
         # Test date search
         self.assertEqual(cache.search('template:{pubdate}#@#:d:<2001-09-01"'), {1, 3})
+        # Test that the precision of a date search comes from the fields
+        # present in the query, not from the separators used
+        self.assertEqual(cache.search('pubdate:"6 Oct 2001"'), {2})
+        self.assertEqual(cache.search('pubdate:"6 Oct 2001 10am"'), {2})
+        self.assertEqual(cache.search('pubdate:6.Oct.2001'), {2})
+        self.assertEqual(cache.search('pubdate:6Oct2001'), {2})
+        self.assertEqual(cache.search('pubdate:"October 2001"'), {2})
+        self.assertEqual(cache.search('pubdate:"October 2001 10am"'), {2})
+        self.assertEqual(cache.search('pubdate:">Feb 6, 2001"'), {2, 3})
+        self.assertEqual(cache.search('pubdate:"<=June 2001"'), {1, 3})
+        self.assertEqual(cache.search('pubdate:"2001 AD"'), {1, 2, 3})
+        self.assertEqual(cache.search('pubdate:2001-06'), {3})
+        self.assertEqual(cache.search('pubdate:>2001-02-06'), {2, 3})
+        self.assertEqual(cache.search('pubdate:10.2001'), {2})
+        self.assertEqual(cache.search('pubdate:2001.10'), {2})
+        self.assertEqual(cache.search('pubdate:<6.2001'), {1})
+        self.assertRaises(ParseException, cache.search, 'pubdate:13.2001')
+        # Test relative date searches
+        from calibre.db.search import months_ago
+        from calibre.utils.date import now
+
+        old_pubdates = {i: cache.field_for('pubdate', i) for i in (1, 2, 3)}
+        today = now()
+        dates = {i: months_ago(today, m).replace(day=15, hour=12) for i, m in ((1, 0), (2, 1), (3, 14))}
+
+        def ids_where(pred):
+            return {i for i, d in dates.items() if pred(d)}
+
+        cache.set_field('pubdate', dates)
+        try:
+            self.assertEqual(cache.search('pubdate:thismonth'), {1})
+            self.assertEqual(cache.search('pubdate:lastmonth'), {2})
+            self.assertEqual(cache.search('pubdate:_lastmonth'), {2})
+            self.assertEqual(cache.search('pubdate:1monthsago'), {2})
+            self.assertEqual(cache.search('pubdate:>=1monthsago'), {1, 2})
+            self.assertEqual(cache.search('pubdate:2_monthsago'), set())
+            self.assertEqual(cache.search('pubdate:14monthsago'), {3})
+            self.assertEqual(cache.search('pubdate:<13monthsago'), {3})
+            self.assertEqual(cache.search('pubdate:thisyear'), ids_where(lambda d: d.year == today.year))
+            self.assertEqual(cache.search('pubdate:_thisyear'), ids_where(lambda d: d.year == today.year))
+            self.assertEqual(cache.search('pubdate:lastyear'), ids_where(lambda d: d.year == today.year - 1))
+            self.assertEqual(cache.search('pubdate:1yearsago'), ids_where(lambda d: d.year == today.year - 1))
+            self.assertEqual(cache.search('pubdate:<1_yearsago'), ids_where(lambda d: d.year < today.year - 1))
+            self.assertEqual(cache.search('pubdate:>=0yearsago'), ids_where(lambda d: d.year == today.year))
+            self.assertRaises(ParseException, cache.search, 'pubdate:xmonthsago')
+            self.assertRaises(ParseException, cache.search, 'pubdate:99999yearsago')
+            self.assertRaisesRegex(ParseException, 'out of range', cache.search, 'pubdate:99999monthsago')
+            self.assertRaisesRegex(ParseException, 'out of range', cache.search, 'pubdate:9999999999daysago')
+        finally:
+            cache.set_field('pubdate', old_pubdates)
         # Test boolean search
         self.assertEqual(cache.search('template:{series}#@#:b:true'), {1, 2})
         self.assertEqual(cache.search('template:{series}#@#:b:false'), {3})

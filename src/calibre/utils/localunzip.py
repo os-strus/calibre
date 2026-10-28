@@ -11,9 +11,10 @@ Tries to only use the local headers to extract data from the damaged zip file.
 import os
 import shutil
 import sys
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
 from compression import zlib
 from struct import calcsize, pack, unpack
+from typing import NamedTuple
 
 from calibre.ptempfile import SpooledTemporaryFile
 
@@ -24,10 +25,29 @@ local_header_sz = calcsize(local_header_fmt)
 ZIP_STORED, ZIP_DEFLATED = 0, 8
 DATA_DESCRIPTOR_SIG = pack(b'<L', 0x08074B50)
 
-LocalHeader = namedtuple(
-    'LocalHeader',
-    'signature min_version flags compression_method mod_time mod_date crc32 compressed_size uncompressed_size filename_length extra_length filename extra',
-)
+
+class NoSuchFile(KeyError, ValueError):
+    # Subclass KeyError for compatibility with ZipFile and ValueError for
+    # backwards compatibility with existing code
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ''
+
+
+class LocalHeader(NamedTuple):
+    signature: int
+    min_version: int
+    flags: int
+    compression_method: int
+    mod_time: int
+    mod_date: int
+    crc32: int
+    compressed_size: int
+    uncompressed_size: int
+    filename_length: int
+    extra_length: int
+    filename: str | None
+    extra: bytes | None
+
 
 if hasattr(sys, 'getwindowsversion'):
     windows_reserved_filenames = (
@@ -96,15 +116,20 @@ def find_local_header(f):
     if len(raw) != local_header_sz:
         f.seek(pos)
         return
-    header = LocalHeader(*(unpack(local_header_fmt, raw) + (None, None)))
+    header = LocalHeader(*(unpack(local_header_fmt, raw)), filename=None, extra=None)
     if header.signature == HEADER_SIG:
         return header
     f.seek(pos)
 
 
+class DataDescriptor(NamedTuple):
+    crc32: int
+    compressed_size: int
+    uncompressed_size: int
+
+
 def find_data_descriptor(f):
     pos = f.tell()
-    DD = namedtuple('DD', 'crc32 compressed_size uncompressed_size')
     raw = b'a' * 16
     try:
         while len(raw) >= 16:
@@ -112,7 +137,7 @@ def find_data_descriptor(f):
             idx = raw.find(DATA_DESCRIPTOR_SIG)
             if idx != -1:
                 f.seek(f.tell() - len(raw) + idx + len(DATA_DESCRIPTOR_SIG))
-                return DD(*unpack(b'<LLL', f.read(12)))
+                return DataDescriptor(*unpack(b'<LLL', f.read(12)))
             # Rewind to handle the case of the signature being cut off
             # by the 50K boundary
             f.seek(f.tell() - len(DATA_DESCRIPTOR_SIG))
@@ -128,7 +153,7 @@ def read_local_file_header(f):
     if len(raw) != local_header_sz:
         f.seek(pos)
         return
-    header = LocalHeader(*(unpack(local_header_fmt, raw) + (None, None)))
+    header = LocalHeader(*(unpack(local_header_fmt, raw)), filename=None, extra=None)
     if header.signature != HEADER_SIG:
         f.seek(pos)
         header = find_local_header(f)
@@ -280,7 +305,7 @@ class LocalZipFile:
     def _get_file_info(self, name):
         fi = self.file_info.get(name)
         if fi is None:
-            raise ValueError(f'This ZIP container has no file named: {name}')
+            raise NoSuchFile(f'This ZIP container has no file named: {name}')
         return fi
 
     def open(self, name, spool_size=5 * 1024 * 1024):

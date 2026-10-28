@@ -2,10 +2,10 @@
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 
 import os
-from collections import namedtuple
 from copy import copy
 from datetime import datetime, time
 from functools import lru_cache, partial
+from typing import NamedTuple
 from urllib.parse import quote
 
 from calibre.constants import config_dir
@@ -243,10 +243,17 @@ def get_icon_for_node(node, parent, node_to_tag_map, tag_map, eval_formatter, db
         node['value_icon'] = val_icon
 
 
-CategoriesSettings = namedtuple(
-    'CategoriesSettings',
-    'dont_collapse collapse_model collapse_at sort_by template using_hierarchy grouped_search_terms hidden_categories hide_empty_categories folders_first',
-)
+class CategoriesSettings(NamedTuple):
+    dont_collapse: frozenset[str]
+    collapse_model: str
+    collapse_at: int
+    sort_by: str
+    template: str | None
+    using_hierarchy: frozenset[str]
+    grouped_search_terms: GroupedSearchTerms | tuple
+    hidden_categories: frozenset[str]
+    hide_empty_categories: bool
+    folders_first: bool
 
 
 class GroupedSearchTerms:
@@ -541,7 +548,7 @@ def process_category_node(
     category_is_hierarchical = (
         category in opts.using_hierarchy and opts.sort_by == 'name' and category not in {'authors', 'publisher', 'news', 'formats', 'rating'}
     )
-    clear_rating = category not in categories_with_ratings and not fm['is_custom'] and not fm['kind'] == 'user'
+    clear_rating = category not in categories_with_ratings and not fm['is_custom'] and fm['kind'] != 'user'
     collapsible = collapse_model != 'disable' and cat_len > opts.collapse_at
     partitioned = collapse_model == 'partition'
     cl_list = build_first_letter_list(category_items) if collapsible and collapse_model == 'first letter' else ()

@@ -1,8 +1,7 @@
 # License: GPLv3 Copyright: 2008, Kovid Goyal <kovid at kovidgoyal.net>
 
 import os
-from collections import namedtuple
-from typing import ClassVar, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 from calibre import prints
 from calibre.constants import iswindows
@@ -105,7 +104,9 @@ class DevicePlugin(Plugin):
     icon = 'reader.png'
 
     # Encapsulates an annotation fetched from the device
-    UserAnnotation = namedtuple('UserAnnotation', 'type, value')
+    class UserAnnotation(NamedTuple):
+        type: str
+        value: Any
 
     #: GUI displays this as a message if not None in the status bar. Useful if opening can take a
     #: long time
@@ -178,10 +179,7 @@ class DevicePlugin(Plugin):
     def test_bcd(self, bcdDevice, bcd):
         if bcd is None or len(bcd) == 0:
             return True
-        for c in bcd:
-            if c == bcdDevice:
-                return True
-        return False
+        return any(c == bcdDevice for c in bcd)
 
     def is_usb_connected(self, devices_on_system, debug=False, only_presence=False):
         """

@@ -4,10 +4,10 @@
 import copy
 import re
 import weakref
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
 from itertools import groupby
 from operator import attrgetter, itemgetter
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 from qt.core import (
     QDialog,
@@ -52,7 +52,10 @@ def string_length(x):
 KEY = Qt.Key.Key_J
 MODIFIER = Qt.KeyboardModifier.MetaModifier if ismacos else Qt.KeyboardModifier.ControlModifier
 
-SnipKey = namedtuple('SnipKey', 'trigger syntaxes')
+
+class SnipKey(NamedTuple):
+    trigger: str
+    syntaxes: frozenset[str]
 
 
 def snip_key(trigger, *syntaxes):
@@ -339,9 +342,7 @@ class Template(list):
         if not self.has_tab_stops:
             return False
         pos = cursor.position()
-        if self.left_most_position <= pos <= self.right_most_position:
-            return True
-        return False
+        return self.left_most_position <= pos <= self.right_most_position
 
     def jump_to_next(self, editor):
         if self.active_tab_stop is None:

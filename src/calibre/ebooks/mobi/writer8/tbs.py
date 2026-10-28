@@ -12,15 +12,26 @@ For the exact algorithm, see separate_strands(). The strands are then encoded
 into 'sequences', see encode_strands_as_sequences() and finally the sequences
 are turned into bytes.
 '''
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
 from operator import attrgetter
+from typing import NamedTuple
 
 from calibre.ebooks.mobi.utils import encode_tbs, encode_trailing_data
 
-Entry = namedtuple(
-    'Entry',
-    'index start length depth parent first_child last_child title action start_offset length_offset text_record_length',
-)
+
+class Entry(NamedTuple):
+    index: int
+    start: int
+    length: int
+    depth: int
+    parent: int | None
+    first_child: int | None
+    last_child: int | None
+    title: int | None
+    action: int | None
+    start_offset: int | None
+    length_offset: int | None
+    text_record_length: int | None
 
 
 def fill_entry(entry, start_offset, text_record_length):
@@ -126,7 +137,7 @@ def encode_strands_as_sequences(strands, tbs_type=8):
             extra = {}
             if entries[-1].action == 'spans':
                 extra[0b1] = 0
-            elif False and (
+            elif False and (  # ruff: ignore[expr-and-false]
                 entries[-1].length_offset < entries[-1].text_record_length
                 and entries[-1].action == 'completes'
                 and entries[-1].length_offset != max_length_offset

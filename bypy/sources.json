@@ -116,9 +116,9 @@
     },
 
     {
-        "name": "libbrotli 1.2.0",
+        "name": "libbrotli 1.2.1",
         "unix": {
-            "hash": "sha256:816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec",
+            "hash": "sha256:98d35d11a78dc453aebb7d10c3748f3f73ff78c8267c0dc697b8631f67bf7e8f",
             "urls": ["https://github.com/google/brotli/archive/refs/tags/v{version}.tar.gz"]
         }
     },
@@ -205,10 +205,10 @@
     },
 
     {
-        "name": "python 3.14.8",
+        "name": "python 3.14.10",
         "unix": {
             "file_extension": "tar.xz",
-            "hash": "sha256:c2215904f02b175596dc49351585104f4bc20341e1c47378b26a2c274360ce73",
+            "hash": "sha256:de414a57119abef52784d8993e341d53aed635fc2b05c2607d9f98a2c5b72032",
             "urls": ["https://www.python.org/ftp/python/{version}/Python-{version}.{file_extension}"]
         }
     },
@@ -272,10 +272,10 @@
     },
 
     {
-        "name": "libtiff 4.7.1",
+        "name": "libtiff 4.7.2",
         "unix": {
             "file_extension": "tar.xz",
-            "hash": "sha256:b92017489bdc1db3a4c97191aa4b75366673cb746de0dce5d7a749d5954681ba",
+            "hash": "sha256:4996f0c4f93094719b1ca5c6279b20e588773ba8a247533e486416fb662ddb88",
             "urls": ["http://download.osgeo.org/libtiff/tiff-{version}.{file_extension}"]
         }
     },

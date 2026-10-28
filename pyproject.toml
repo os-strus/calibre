@@ -37,7 +37,7 @@ dependencies = [
 	"ifaddr == 0.2.0",
 	"texttable == 1.7.0",
 	"multivolumefile == 0.2.3",
-	"Brotli == 1.2.0",
+	"Brotli == 1.2.1",
 	"pyppmd == 1.3.1",
 	"pybcj == 1.0.7",
 	"inflate64 == 1.0.4",
@@ -54,7 +54,7 @@ dependencies = [
 	"PyQt6_WebEngine == 6.10.0",
 	"MacFSEvents == 0.8.4; sys_platform == 'darwin'",
 	"xxhash == 3.6.0",
-    "tzdata == 2026.4",
+    "tzdata == 2026.5",
     "tzlocal == 5.4.4",
 	"pystache == 0.6.8",
 
@@ -80,7 +80,7 @@ requires = [
 	"wheel == 0.46.2", # Needed for build which is needed for setuptools
 	"build == 1.3.0", # Needed for build which is needed for setuptools
     "pybind11 == 3.0.1", # Needed for pillow
-	"setuptools == 83.0.0",
+	"setuptools == 84.1.0",
     "pkgconfig == 1.5.5",  # Needed by Brotli
 	# Some packages (xxhash/py7zr/etc) erroneously declare this as a dependency even
 	# though it is needed only for sdist not building wheels
@@ -120,61 +120,6 @@ quote-style = 'preserve'
 
 [tool.ruff.lint]
 explicit-preview-rules = true
-ignore = [
-    'ambiguous-unicode-character-comment',
-    'ambiguous-unicode-character-docstring',
-    'ambiguous-unicode-character-string',
-    'ambiguous-variable-name',
-    'batched-without-explicit-strict',
-    'collection-literal-concatenation',
-    'eq-without-hash',
-    'error-instead-of-exception',
-    'explicit-string-concatenation',
-    'for-loop-writes',
-    'format-literals',
-    'get-attr-with-constant',
-    'global-statement',
-    'global-variable-not-assigned',
-    'implicit-optional',
-    'import-outside-top-level',
-    'incorrectly-parenthesized-tuple-in-subscript',
-    'int-on-sliced-str',
-    'logging-too-many-args',
-    'magic-value-comparison',
-    'map-without-explicit-strict',
-    'module-import-not-at-top-of-file',
-    'mutable-class-default',
-    'no-self-use',
-    'raise-vanilla-args',
-    'raise-vanilla-class',
-    'raise-within-try',
-    'raise-without-from-inside-except',
-    'redefined-argument-from-local',
-    'redefined-loop-name',
-    'regex-flag-alias',
-    'set-attr-with-constant',
-    'subprocess-run-without-check',
-    'too-many-arguments',
-    'too-many-boolean-expressions',
-    'too-many-branches',
-    'too-many-locals',
-    'too-many-nested-blocks',
-    'too-many-positional-arguments',
-    'too-many-return-statements',
-    'too-many-statements',
-    'try-consider-else',
-    'typing-only-first-party-import',
-    'typing-only-standard-library-import',
-    'typing-only-third-party-import',
-    'unnecessary-call-around-sorted',
-    'unnecessary-dict-comprehension-for-iterable',
-    'unnecessary-encode-utf8',
-    'unnecessary-iterable-allocation-for-first-element',
-    'unnecessary-placeholder',
-    'unused-loop-control-variable',
-    'unused-unpacked-variable',
-    'zip-without-explicit-strict',
-]
 select = [
     'E', 'W', # pycodestyle
     'I',      # isort
@@ -193,6 +138,7 @@ select = [
     'ISC',    # flake8-implicit-str-concat
     'LOG',    # flake8-logging
     'PIE',    # flake8-pie
+    'PYI',    # flake8-pyi
     'Q',      # flake8-quotes
     'TID',    # flake8-tidy-imports
     'TC',     # flake8-type-checking
@@ -203,11 +149,35 @@ select = [
     # from the ruff default rules set
     'G1', 'G2', # flake8-logging-format
     'empty-docstring',
+    'invalid-mock-access',
     'invalid-module-name',
     'invalid-pathlib-with-suffix',
     'manual-list-copy',
     'py-path',
     'unnecessary-list-cast',
+    ## flake8-pytest-style (PT)
+    'pytest-raises-without-exception',
+    'pytest-duplicate-parametrize-test-cases',
+    'pytest-deprecated-yield-fixture',
+    'pytest-erroneous-use-fixtures-on-fixture',
+    'pytest-use-fixtures-without-parameters',
+    'pytest-warns-with-multiple-statements',
+    ## flake8-simplify
+    'double-negation',
+    'duplicate-isinstance-call',
+    'enumerate-for-loop',
+    'expr-and-false',
+    'expr-and-not-expr',
+    'expr-or-not-expr',
+    'expr-or-true',
+    'if-else-block-instead-of-dict-get',
+    'if-expr-with-false-true',
+    'if-expr-with-true-false',
+    'negate-equal-op',
+    'negate-not-equal-op',
+    'reimplemented-builtin',
+    'return-in-try-except-finally',
+    'zip-dict-keys-and-values',
     # custom rules
     'trailing-comma-on-bare-tuple',
     'unnecessary-return-none',
@@ -247,6 +217,66 @@ select = [
     'rule-codes-in-suppression-comments',
 ]
 unfixable = ['ISC', 'duplicate-class-field-definition']
+ignore = [
+    'ambiguous-unicode-character-comment',
+    'ambiguous-unicode-character-docstring',
+    'ambiguous-unicode-character-string',
+    'ambiguous-variable-name',
+    'batched-without-explicit-strict',
+    'collection-literal-concatenation',
+    'docstring-in-stub',
+    'eq-without-hash',
+    'error-instead-of-exception',
+    'explicit-string-concatenation',
+    'for-loop-writes',
+    'format-literals',
+    'get-attr-with-constant',
+    'global-statement',
+    'global-variable-not-assigned',
+    'implicit-optional',
+    'import-outside-top-level',
+    'incorrectly-parenthesized-tuple-in-subscript',
+    'int-on-sliced-str',
+    'logging-too-many-args',
+    'magic-value-comparison',
+    'map-without-explicit-strict',
+    'module-import-not-at-top-of-file',
+    'mutable-class-default',
+    'no-self-use',
+    'pass-statement-stub-body',
+    'raise-vanilla-args',
+    'raise-vanilla-class',
+    'raise-within-try',
+    'raise-without-from-inside-except',
+    'redefined-argument-from-local',
+    'redefined-loop-name',
+    'redundant-numeric-union',
+    'regex-flag-alias',
+    'set-attr-with-constant',
+    'str-or-repr-defined-in-stub',
+    'stub-body-multiple-statements',
+    'subprocess-run-without-check',
+    'too-many-arguments',
+    'too-many-boolean-expressions',
+    'too-many-branches',
+    'too-many-locals',
+    'too-many-nested-blocks',
+    'too-many-positional-arguments',
+    'too-many-return-statements',
+    'too-many-statements',
+    'try-consider-else',
+    'typing-only-first-party-import',
+    'typing-only-standard-library-import',
+    'typing-only-third-party-import',
+    'unnecessary-call-around-sorted',
+    'unnecessary-dict-comprehension-for-iterable',
+    'unnecessary-encode-utf8',
+    'unnecessary-iterable-allocation-for-first-element',
+    'unnecessary-placeholder',
+    'unused-loop-control-variable',
+    'unused-unpacked-variable',
+    'zip-without-explicit-strict',
+]
 
 [tool.ruff.lint.per-file-ignores]
 "recipes/*" = ['UP', 'FLY', 'DTZ', 'slice-to-remove-prefix-or-suffix']

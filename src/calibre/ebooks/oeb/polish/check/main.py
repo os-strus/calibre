@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 # License: GPLv3 Copyright: 2013, Kovid Goyal <kovid at kovidgoyal.net>
 
-from collections import namedtuple
 from collections.abc import Iterable
 from functools import partial
+from typing import TYPE_CHECKING, NamedTuple
 
 from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES
+from calibre.ebooks.oeb.polish.check.accessibility import check_accessibility
 from calibre.ebooks.oeb.polish.check.base import WARN, BaseError, run_checkers
 from calibre.ebooks.oeb.polish.check.fonts import check_fonts
 from calibre.ebooks.oeb.polish.check.images import check_raster_images
@@ -24,6 +25,9 @@ from calibre.ebooks.oeb.polish.check.parsing import (
 from calibre.ebooks.oeb.polish.cover import is_raster_image
 from calibre.ebooks.oeb.polish.utils import guess_type
 from polyglot.builtins import as_unicode
+
+if TYPE_CHECKING:
+    from lxml.etree import Element
 
 XML_TYPES = frozenset(map(guess_type, ('a.xml', 'a.svg', 'a.opf', 'a.ncx'))) | {'application/oebps-page-map+xml'}
 
@@ -50,7 +54,7 @@ def remove_skipped(errors: Iterable[BaseError], skipped_rules: frozenset[str]) -
     return [e for e in errors if not e.can_be_skipped or e.rule_id not in skipped_rules]
 
 
-def run_checks(container, skipped_rules: frozenset[str] = frozenset()):
+def run_checks(container, skipped_rules: frozenset[str] = frozenset(), accessibility: bool = False):
 
     errors = []
 
@@ -114,11 +118,16 @@ def run_checks(container, skipped_rules: frozenset[str] = frozenset()):
     errors += check_filenames(container)
     errors += check_markup(container)
     errors += check_opf(container)
+    if accessibility:
+        errors += check_accessibility(container)
 
     return remove_skipped(errors, skipped_rules)
 
 
-CSSFix = namedtuple('CSSFix', 'original_css elem attribute')
+class CSSFix(NamedTuple):
+    original_css: str
+    elem: Element | None
+    attribute: str
 
 
 def fix_css(container, skipped_rules: frozenset[str] = frozenset()):

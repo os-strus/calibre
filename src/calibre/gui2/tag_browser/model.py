@@ -4,7 +4,8 @@
 import copy
 import os
 import traceback
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
+from typing import NamedTuple
 
 from qt.core import QAbstractItemModel, QFont, QIcon, QMimeData, QModelIndex, QObject, Qt, pyqtSignal
 
@@ -402,7 +403,10 @@ class TagTreeItem:  # {{{
     # }}}
 
 
-FL_Interval = namedtuple('FL_Interval', ('first_chr', 'last_chr', 'length'))
+class FL_Interval(NamedTuple):
+    first_chr: str
+    last_chr: str
+    length: int
 
 
 def rename_only_in_vl_question(parent):
@@ -965,7 +969,7 @@ class TagsModel(QAbstractItemModel):  # {{{
 
             category_child_map = {}
             fm = pn_db.field_metadata[key]
-            clear_rating = True if key not in self.categories_with_ratings and not fm['is_custom'] and not fm['kind'] == 'user' else False
+            clear_rating = key not in self.categories_with_ratings and not fm['is_custom'] and fm['kind'] != 'user'
             in_uc = fm['kind'] == 'user' and not is_gst
             tt = key if in_uc else None
 
@@ -974,7 +978,7 @@ class TagsModel(QAbstractItemModel):  # {{{
                 # in ICU's 'ordinal' for the first letter. In this case, the
                 # first letter can actually be more than one letter long.
                 fl_collapse_when = self.prefs['tags_browser_collapse_fl_at']
-                fl_collapse = True if fl_collapse_when > 1 else False
+                fl_collapse = fl_collapse_when > 1
                 intervals = []
                 cl_list = [None] * len(data[key])
                 last_ordnum = 0
@@ -1863,6 +1867,8 @@ class TagsModel(QAbstractItemModel):  # {{{
                 return True
             if val in sd_db.saved_search_names():
                 return self.show_error_after_event_loop_tick(_('Duplicate search name'), _('The saved search name %s is already used.') % val)
+            if '"' in val:
+                return self.show_error_after_event_loop_tick(_('Invalid search name'), _('Saved search names cannot contain " (quote) characters.'))
             self.use_position_based_index_on_next_recount = True
             sd_db.saved_search_rename(str(item.data(role) or ''), val)
             item.tag.name = val
@@ -2330,6 +2336,7 @@ class TagsModel(QAbstractItemModel):  # {{{
             if (equals_match and final_equals(name, txt)) or (not equals_match and final_contains(txt, name)):
                 self.path_found = path
                 return True
+            # ruff: ignore[reimplemented-builtin]
             for i, c in enumerate(tag_item.children):
                 if process_tag(depth + 1, self.createIndex(i, 0, c), c, start_path):
                     return True

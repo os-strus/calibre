@@ -4,10 +4,10 @@ import codecs
 import locale
 import os
 import sys
-from collections import namedtuple
 from collections.abc import Mapping, MutableMapping
 from contextlib import contextmanager
 from functools import lru_cache
+from typing import NamedTuple
 
 from polyglot.builtins import environ_item, hasenv
 
@@ -86,7 +86,11 @@ def get_osx_version():
     if _osx_ver is None:
         import platform
 
-        OSX = namedtuple('OSX', 'major minor tertiary')
+        class OSX(NamedTuple):
+            major: int
+            minor: int
+            tertiary: int
+
         try:
             ver = platform.mac_ver()[0].split('.')
             if len(ver) == 2:
@@ -347,10 +351,7 @@ class Plugins(Mapping):
     def __contains__(self, name):
         from importlib.resources import files
 
-        for x in files('calibre_extensions').iterdir():
-            if x.name == name:
-                return True
-        return False
+        return any(x.name == name for x in files('calibre_extensions').iterdir())
 
     def __getitem__(self, name):
         from importlib import import_module

@@ -9,14 +9,13 @@ import reprlib
 import struct
 import time
 import uuid
-from collections import namedtuple
 from collections.abc import Callable
 from compression import zlib
 from functools import wraps
 from io import DEFAULT_BUFFER_SIZE, BytesIO
 from itertools import chain, repeat, zip_longest
 from operator import itemgetter
-from typing import Any
+from typing import Any, NamedTuple
 
 from calibre import force_unicode, guess_type
 from calibre.constants import __version__
@@ -28,11 +27,16 @@ from calibre.utils.monotonic import monotonic
 from calibre.utils.speedups import ReadOnlyFileBuffer
 from polyglot.builtins import error_message, reraise
 
-Range = namedtuple('Range', 'start stop size')
 MULTIPART_SEPARATOR = uuid.uuid4().hex
 if isinstance(MULTIPART_SEPARATOR, bytes):
     MULTIPART_SEPARATOR = MULTIPART_SEPARATOR.decode('ascii')
 COMPRESSIBLE_TYPES = {'application/json', 'application/javascript', 'application/xml', 'application/oebps-package+xml'}
+
+
+class Range(NamedTuple):
+    start: int
+    stop: int
+    size: int
 
 
 def file_metadata(fileobj):
@@ -123,12 +127,18 @@ def preferred_lang(val, get_translator_for_lang):  # {{{
 MAX_RANGES = 64
 
 
-def parse_range_int(x: str) -> int | None:
+def parse_range_int(x: str, content_length: int) -> int | None:
     # RFC 9110 only allows 1*DIGIT, int() is too lenient (signs, underscores,
     # non-ASCII digits)
-    if x and x.isascii() and x.isdigit():
-        return int(x)
-    return None
+    if not x or not x.isascii() or not x.isdigit():
+        return None
+    # Values with more digits than content_length are necessarily beyond the
+    # end of the content, so avoid converting them, as int() is slow for long
+    # strings and raises ValueError beyond sys.get_int_max_str_digits()
+    digits = x.lstrip('0') or '0'
+    if len(digits) > len(str(content_length)):
+        return content_length
+    return int(digits)
 
 
 def get_ranges(headervalue, content_length):  # {{{
@@ -158,8 +168,8 @@ def get_ranges(headervalue, content_length):  # {{{
         except ValueError:
             continue
         if start:
-            istart = parse_range_int(start)
-            istop = parse_range_int(stop) if stop else content_length - 1
+            istart = parse_range_int(start, content_length)
+            istop = parse_range_int(stop, content_length) if stop else content_length - 1
             if istart is None or istop is None:
                 continue
             if istart >= content_length:
@@ -170,7 +180,7 @@ def get_ranges(headervalue, content_length):  # {{{
             result.append(Range(istart, istop, istop - istart + 1))
         elif stop:
             # Negative subscript (last N bytes)
-            suffix_length = parse_range_int(stop)
+            suffix_length = parse_range_int(stop, content_length)
             if not suffix_length or content_length < 1:
                 continue
             if suffix_length > content_length:
@@ -556,6 +566,7 @@ class HTTPConnection(HTTPRequest):
         buf = [
             f'{self.response_protocol} {http.client.REQUESTED_RANGE_NOT_SATISFIABLE} {http.client.responses[http.client.REQUESTED_RANGE_NOT_SATISFIABLE]}',
             'Date: ' + http_date(),
+            'Content-Length: 0',
             f'Content-Range: bytes */{content_length}',
         ]
         response_data = header_list_to_file(buf)

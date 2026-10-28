@@ -167,11 +167,12 @@ class DocStats:
 
 
 class Image(Element):
-    def __init__(self, img, opts, log, idc):
+    def __init__(self, img, page_width, page_height, opts, log, idc):
         Element.__init__(self)
         self.opts, self.log = opts, log
         self.id = next(idc)
         self.top, self.left, self.width, self.height = map(float, map(img.get, ('top', 'left', 'width', 'height')))
+        self.page_width, self.page_height = page_width, page_height
         self.src = img.get('src')
         self.bottom = self.top + self.height
         self.right = self.left + self.width
@@ -179,7 +180,18 @@ class Image(Element):
         self.align = 'L'
 
     def to_html(self):
-        return f'<img src="{self.src}" alt="" width="{int(self.width)}px" height="{int(self.height)}px"/>'
+        # The size of the image in the PDF is in the units of the PDF page, so
+        # it is only meaningful relative to the width of the page. Fixing both
+        # the width and height distorts the image when the reader has to shrink
+        # it to fit the screen, so limit only the width and let the height
+        # follow from the aspect ratio of the image. Images that take up a
+        # large part of the page are allowed to fill the width of the screen,
+        # as otherwise an image filling the height of a landscape page would
+        # come out tiny.
+        percent = 100
+        if self.page_width > 0 and self.page_height > 0 and self.width < self.page_width / 2 and self.height < self.page_height / 2:
+            percent = max(1, round(100 * self.width / self.page_width))
+        return f'<img src="{self.src}" alt="" style="max-width:{percent}%"/>'
 
     def dump(self, f):
         f.write(self.to_html())
@@ -297,9 +309,8 @@ class Text(Element):
         # Need to check for </span> <span... as well
         # This test does not work in its present form
         # The matches can lose data, so force test to fail
-        if (
+        if False and (  # ruff: ignore[expr-and-false]
             self.font_size_em == other.font_size_em
-            and False
             and self.font.id == other.font.id
             and self.raw.startswith(r'<span style="font-size:')
             and other.raw.startswith(r'<span style="font-size:')
@@ -850,7 +861,7 @@ class Page:
         # These can be interspersed with text
         if not self.opts.no_images:
             for img in page.xpath('descendant::image'):
-                self.imgs.append(Image(img, self.opts, self.log, idc))
+                self.imgs.append(Image(img, self.width, self.height, self.opts, self.log, idc))
 
         self.textwidth = self.right_margin - self.left_margin
 
@@ -1954,8 +1965,8 @@ class PDFDocument:
         foot_match2 = [0] * LINE_SCAN_COUNT
         foot_page = 0
         foot_skip = 0
-        # xxx nn xxx nn  or nn xxx  or just roman numerals
-        pagenum_text = r'(.*\d+\s+\w+\s+\d+.*)|(\s*\d+\s+.*)|(^\s*[ivxlcIVXLC]+\s*$)'
+        # xxx nn xxx nn  or nn xxx  or just a number or roman numerals
+        pagenum_text = r'(.*\d+\s+\w+\s+\d+.*)|(\s*\d+\s+.*)|(^\s*(\d+|[ivxlcIVXLC]+)\s*$)'
         # For line ending nn, is the preceding text constant
         fixed_text = r'(^.+[^0-9])\d+\s*$'
         fixed_head = ''
@@ -1967,7 +1978,7 @@ class PDFDocument:
         # so maybe should merge first 2 lines if same top
         # Ditto last 2 lines
         # Maybe should do more than 2 parts
-        for page in self.pages:
+        for page_idx, page in enumerate(self.pages):
             if self.opts.pdf_header_skip < 0 and len(page.texts) > 0:
                 # There is something at the top of the page
                 for head_ind in range(LINE_SCAN_COUNT):
@@ -1981,12 +1992,12 @@ class PDFDocument:
                     elif head_text[head_ind] == t:
                         head_match[head_ind] += 1
                         if head_page == 0:
-                            head_page = page.number
+                            head_page = page_idx
                     elif re.match(pagenum_text, t) is not None:
                         # Look for page count of format 'n xxx n'
                         head_match1[head_ind] += 1
                         if head_page == 0:
-                            head_page = page.number
+                            head_page = page_idx
                     else:
                         # Look for text of format 'constant nn'
                         f = re.match(fixed_text, t)
@@ -1996,7 +2007,7 @@ class PDFDocument:
                             elif fixed_head == f.group(1):
                                 head_match2[head_ind] += 1
                                 if head_page == 0:
-                                    head_page = page.number
+                                    head_page = page_idx
 
             if self.opts.pdf_footer_skip < 0 and len(page.texts) > 0:
                 # There is something at the bottom of the page
@@ -2011,12 +2022,12 @@ class PDFDocument:
                     elif foot_text[foot_ind] == t:
                         foot_match[foot_ind] += 1
                         if foot_page == 0:
-                            foot_page = page.number
+                            foot_page = page_idx
                     elif re.match(pagenum_text, t) is not None:
                         # Look for page count of format 'n xxx n'
                         foot_match1[foot_ind] += 1
                         if foot_page == 0:
-                            foot_page = page.number
+                            foot_page = page_idx
                     else:
                         # Look for text of format 'constant nn'
                         f = re.match(fixed_text, t)
@@ -2026,7 +2037,7 @@ class PDFDocument:
                             elif fixed_foot == f.group(1):
                                 foot_match2[foot_ind] += 1
                                 if foot_page == 0:
-                                    foot_page = page.number
+                                    foot_page = page_idx
 
             pages_to_scan -= 1
             if pages_to_scan < 1:
@@ -2044,7 +2055,7 @@ class PDFDocument:
         for i in range(LINE_SCAN_COUNT):
             if head_match[i] > pages_to_scan or head_match1[i] > pages_to_scan or head_match2[i] > pages_to_scan:
                 head_ind = i  # Remember the last matching line
-        if self.pages[head_page].texts and (
+        if len(self.pages[head_page].texts) > head_ind and (
             head_match[head_ind] > pages_to_scan or head_match1[head_ind] > pages_to_scan or head_match2[head_ind] > pages_to_scan
         ):
             t = self.pages[head_page].texts[head_ind]
@@ -2054,10 +2065,8 @@ class PDFDocument:
         for i in range(LINE_SCAN_COUNT):
             if foot_match[i] > pages_to_scan or foot_match1[i] > pages_to_scan or foot_match2[i] > pages_to_scan:
                 foot_ind = i  # Remember the last matching line
-        if (
-            foot_page < len(self.pages)
-            and self.pages[foot_page].texts
-            and (foot_match[foot_ind] > pages_to_scan or foot_match1[foot_ind] > pages_to_scan or foot_match2[foot_ind] > pages_to_scan)
+        if len(self.pages[foot_page].texts) > foot_ind and (
+            foot_match[foot_ind] > pages_to_scan or foot_match1[foot_ind] > pages_to_scan or foot_match2[foot_ind] > pages_to_scan
         ):
             t = self.pages[foot_page].texts[-foot_ind - 1]
             foot_skip = t.top - 1
@@ -2142,6 +2151,9 @@ class PDFDocument:
                             and merged_text.tag == 'p'
                             and 'href=' not in merged_text.raw
                             and merged_text.left < stats_left_min + merged_text.average_character_width
+                            # Centered text such as an image caption or a heading is not part of a paragraph
+                            and last_line.align != 'C'
+                            and merged_text.align != 'C'
                             and not last_spare > merged_len
                             and not ('"float:right"' in last_line.raw and '"float:right"' in merged_text.raw)
                             and not adjacent_quotes(last_line.text_as_string, merged_text.text_as_string)
@@ -2177,7 +2189,7 @@ class PDFDocument:
                                 and (len(self.pages[pind + 1].texts) == 0 or self.pages[pind + 1].texts[0].top > self.pages[pind + 1].imgs[0].top)
                             ):
                                 page.page_break_after = True
-                    elif re.match(r'.*[a-z, ]$', last_line.text_as_string) is not None or last_line.final_width > page.width * self.opts.unwrap_factor:
+                    elif re.match(r'.*[a-z,]\s*$', last_line.text_as_string) is not None or last_line.final_width > page.width * self.opts.unwrap_factor:
                         candidate = page
                 else:
                     candidate = None

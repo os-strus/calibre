@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 # License: GPLv3 Copyright: 2012, Kovid Goyal <kovid at kovidgoyal.net>
 
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
 from collections.abc import Callable
 from struct import calcsize, unpack_from
+from typing import NamedTuple
 
 from calibre.utils.fonts.sfnt.errors import UnsupportedFont
 
@@ -122,7 +123,7 @@ class ScriptListTable(ListTable):
 class FeatureTable(IndexTable):
     def read_extra_header(self, data):
         self.feature_params = data.unpack('H')
-        if False and self.feature_params != 0:
+        if False and self.feature_params != 0:  # ruff: ignore[expr-and-false]
             # Source code pro sets this to non NULL
             raise UnsupportedFont(f'This FeatureTable has non NULL FeatureParams: 0x{self.feature_params:x}')
 
@@ -154,7 +155,10 @@ def ExtensionSubstitution(raw, offset, subtable_map=None):
     return subtable_map[extension_lookup_type](raw, offset + data.start_pos)
 
 
-CoverageRange = namedtuple('CoverageRange', 'start end start_coverage_index')
+class CoverageRange(NamedTuple):
+    start: int
+    end: int
+    start_coverage_index: int
 
 
 class Coverage:
