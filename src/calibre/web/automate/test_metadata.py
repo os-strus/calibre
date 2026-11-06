@@ -7,19 +7,21 @@
 # records what is done with it.
 
 import asyncio
+import io
 import os
 import threading
 import time
 import unittest
 from collections import Counter
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from contextlib import redirect_stderr
 from queue import Empty, Queue
 from threading import Event as ThreadingEvent
-from typing import Any, cast
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 from unittest.mock import MagicMock, patch
 from urllib.parse import quote_plus, urljoin
 
-from calibre.web.automate import metadata
+from calibre.web.automate import download_deps, metadata
 from calibre.web.automate.camoufox import Browser, Error, Event
 from calibre.web.automate.metadata import (
     ENV_VAR,
@@ -28,6 +30,7 @@ from calibre.web.automate.metadata import (
     SELECT_OPTION_JS,
     AmazonHandler,
     BrowserFailed,
+    BrowserUnavailable,
     Deadline,
     GoogleImagesHandler,
     Link,
@@ -42,7 +45,10 @@ from calibre.web.automate.metadata import (
     parse_html,
     run_in_browser,
 )
-from calibre.web.automate.worker import start_worker
+from calibre.web.automate.worker import Response, start_worker
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine, Mapping, Sequence
 
 HOME = 'https://www.amazon.com/'
 OPTIONS = (
@@ -61,6 +67,13 @@ CONTINUE_PAGE = '''<html><body><h4>Click the button below to continue shopping</
 CAPTCHA_PAGE = '''<html><body><form method="get" action="/errors/validateCaptcha">
 <img src="https://images-na.ssl-images-amazon.com/captcha/abc/Captcha_xyz.jpg">
 <input id="captchacharacters" name="field-keywords" type="text"><button type="submit">Continue</button></form></body></html>'''
+CHECKPOINT_PAGE = '''<html><body><p>To continue, please click the "Continue shopping" button below.</p>
+<form method="POST" action="/checkpoint/validate" id="checkpointForm"><input type="hidden" name="token" value="v1.x">
+<button type="submit" class="a-button-text" name="continueClick" value="true">Continue shopping</button></form></body></html>'''
+CHECKPOINT_BOX_PAGE = '''<html><body><p>Check the box to continue.</p>
+<form method="POST" action="/checkpoint/validate" id="checkpointForm"><input type="hidden" name="token" value="v1.x">
+<label for="continueCheck"><input type="checkbox" id="continueCheck" name="continueCheck" value="true"><span>I am human</span></label>
+<button type="submit" class="a-button-text" disabled>Continue shopping</button></form></body></html>'''
 CHALLENGE_PAGE = '''<html><head><script src="https://abc.token.awswaf.com/abc/challenge.js"></script></head>
 <body><div id="challenge-container"></div></body></html>'''
 
@@ -288,8 +301,11 @@ class FakePage:
 
     async def click(self, css_selector: str, timeout: float = 0) -> None:  # ruff: ignore[async-function-with-timeout]
         self.browser.log.append(('click-selector', css_selector))
-        # The continue shopping button leads back to the page asked for
-        self.navigate(self.url)
+        if css_selector == metadata.AMAZON_CHECKPOINT_BOX:
+            return
+        # The continue shopping button leads back to the page asked for, or
+        # sometimes somewhere else
+        self.navigate(self.browser.continue_to or self.url)
 
     async def evaluate(self, expression: str) -> int:
         return 0
@@ -314,6 +330,7 @@ class FakeBrowser:
         self.unloadable: set[str] = set()
         self.cookie_jar: list[dict[str, Any]] = []
         self.consent_navigates = True
+        self.continue_to = ''
 
     async def cookies(self) -> list[dict[str, Any]]:
         return list(self.cookie_jar)
@@ -393,6 +410,8 @@ class RecordingHandler(SourceHandler):
                 return {'handled': self.handled}
             case 'raise':
                 raise ValueError('a handler failure')
+            case 'unavailable':
+                raise BrowserUnavailable('not today', 'the details')
             case 'open':
                 return {'details': await self.open_in_tabs(None, [Link(u) for u in args['urls']], deadline)}
         return await super().handle(action, args, deadline)
@@ -422,7 +441,15 @@ def start_test_worker() -> tuple[str, Callable[[], int]]:
 
 class TestPageAnalysis(unittest.TestCase):
     def test_metadata_page_kind(self) -> None:
-        for html, kind in ((HOME_PAGE, 'ok'), (RESULTS, 'ok'), (CONTINUE_PAGE, 'continue'), (CAPTCHA_PAGE, 'captcha'), (CHALLENGE_PAGE, 'challenge')):
+        for html, kind in (
+            (HOME_PAGE, 'ok'),
+            (RESULTS, 'ok'),
+            (CONTINUE_PAGE, 'continue'),
+            (CAPTCHA_PAGE, 'captcha'),
+            (CHALLENGE_PAGE, 'challenge'),
+            (CHECKPOINT_PAGE, 'checkpoint'),
+            (CHECKPOINT_BOX_PAGE, 'checkpoint'),
+        ):
             self.assertEqual(amazon_page_kind(parse_html(html)), kind, html)
 
     def test_metadata_google_page_kind(self) -> None:
@@ -570,6 +597,47 @@ class TestHandlers(unittest.TestCase):
         browser = FakeBrowser(amazon_site(home=(CONTINUE_PAGE,)))
         result = self.search(browser)[0]
         self.assertEqual(result['kind'], 'blocked')
+
+        browser = FakeBrowser(amazon_site(home=(CHECKPOINT_PAGE, CHECKPOINT_BOX_PAGE, HOME_PAGE)))
+        result = self.search(browser)[0]
+        self.assertNotIn('error', result)
+        self.assertEqual(len(result['details']), 3)
+        # The box is ticked only on the page that has one
+        self.assertEqual(
+            [x[1] for x in browser.log if x[0] == 'click-selector'],
+            [metadata.AMAZON_CHECKPOINT_SUBMIT, metadata.AMAZON_CHECKPOINT_BOX, metadata.AMAZON_CHECKPOINT_SUBMIT],
+        )
+
+    def details(self, browser: FakeBrowser, urls: Sequence[str]) -> dict[str, Any]:
+        async def t() -> dict[str, Any]:
+            return await fake_state(browser).handle({'source': 'amazon', 'action': 'details', 'args': {'urls': list(urls)}, 'deadline': time.time() + 30})
+
+        return run(t())
+
+    def test_metadata_amazon_details_interstitials(self) -> None:
+        url, other = f'{HOME}dp/B000000001', f'{HOME}dp/B000000002'
+        details = '<html><body><p id="url">{}</p></body></html>'
+        browser = FakeBrowser({url: (CHECKPOINT_BOX_PAGE, details.format(url)), other: (CONTINUE_PAGE, details.format(other))})
+        result = self.details(browser, (url, other))
+        self.assertEqual([(d['url'], d['html']) for d in result['details']], [(url, details.format(url)), (other, details.format(other))])
+        self.assertEqual(Counter(x[1] for x in browser.log if x[0] == 'click-selector')[metadata.AMAZON_CHECKPOINT_BOX], 1)
+
+        # Getting past the checkpoint ends up on the home page, so the page
+        # asked for is loaded again
+        browser = FakeBrowser({url: (CHECKPOINT_PAGE, details.format(url)), HOME: (HOME_PAGE,)})
+        browser.continue_to = HOME
+        result = self.details(browser, (url,))
+        self.assertEqual([(d['url'], d['html']) for d in result['details']], [(url, details.format(url))])
+        self.assertEqual([x[1] for x in browser.log if x[0] == 'open'], [url, url])
+
+        # Amazon insisting on a sign in is an error
+        signin = f'{HOME}ap/signin?openid.return_to=x'
+        browser = FakeBrowser({url: (CHECKPOINT_PAGE,), signin: ('<html><body><form name="signIn"></form></body></html>',)})
+        browser.continue_to = signin
+        d = self.details(browser, (url,))['details'][0]
+        self.assertEqual(d['url'], url)
+        self.assertIn('sign in', d['error'])
+        self.assertTrue(all(p.closed for p in browser.pages))
 
     def test_metadata_amazon_results_html(self) -> None:
         result = self.search(FakeBrowser(amazon_site()), search_args(include_results_html=True))[0]
@@ -832,8 +900,13 @@ class TestWorkerProcess(unittest.TestCase):
                 self.assertFalse(errors)
                 self.assertGreaterEqual(time.monotonic() - start, 3 * delay)
                 self.assertEqual(run_in_browser('recorder', 'log', {})['handled'], [0, 1, 2])
-                with self.assertRaisesRegex(BrowserFailed, 'a handler failure'):
+                with self.assertRaisesRegex(BrowserFailed, 'a handler failure') as cm:
                     run_in_browser('recorder', 'raise', {})
+                self.assertIn('Traceback', str(cm.exception))
+                # The traceback of where BrowserUnavailable was raised is noise
+                with self.assertRaises(BrowserFailed) as cm:
+                    run_in_browser('recorder', 'unavailable', {})
+                self.assertEqual(str(cm.exception), 'The camoufox metadata worker failed: not today\n\nthe details')
         finally:
             close()
         with patch.dict(os.environ, {ENV_VAR: metadata.path_to_env(path)}), self.assertRaisesRegex(BrowserFailed, 'connect'):
@@ -865,6 +938,28 @@ class TestWorkerProcess(unittest.TestCase):
                 self.assertEqual(len(started), 2)
             finally:
                 worker.shutdown()
+
+    def test_metadata_launch_failure_reported(self) -> None:
+        worker = SessionWorker()
+        reported: Queue[str] = Queue()
+        worker.on_launch_failure = reported.put
+        response = Response(exception='No space\n\nthe traceback')
+        with (
+            patch.object(worker, 'ensure_started', return_value='the-path'),
+            patch.object(metadata, 'make_request', return_value=response),
+            redirect_stderr(io.StringIO()),
+        ):
+            worker.launch_in_background()
+            self.assertEqual(reported.get(timeout=10), 'No space\n\nthe traceback')
+            # Launching is requested again by the next download
+            worker.on_launch_failure = MagicMock(side_effect=ValueError('a broken callback'))
+            limit = time.monotonic() + 10
+            while worker.launch_requested and time.monotonic() < limit:
+                time.sleep(0.01)
+            worker.launch_in_background()
+            while not worker.on_launch_failure.called and time.monotonic() < limit:
+                time.sleep(0.01)
+            worker.on_launch_failure.assert_called_once()
 
     def test_metadata_env_for_jobs(self) -> None:
         plugin = MagicMock()
@@ -911,6 +1006,194 @@ class TestWorkerProcess(unittest.TestCase):
                 self.assertEqual(load_module.call_args[0][0], 'calibre.web.automate.metadata')
         finally:
             metadata.live = orig
+
+
+class LaunchedBrowser:
+    """Stands in for the browser launched by Launcher."""
+
+    launched: ClassVar[list[LaunchedBrowser]] = []
+    fail_with: ClassVar[Exception | None] = None
+
+    def __init__(self, headless: bool = True, warmup: Any = None, install: download_deps.Install | None = None) -> None:  # ruff: ignore[any-type]
+        self.install = install
+        self.process = None
+        self.closed = False
+        self.profile_dir = ''
+
+    async def launch(self) -> None:
+        if (err := LaunchedBrowser.fail_with) is not None:
+            raise err
+        LaunchedBrowser.launched.append(self)
+
+
+class TestLauncher(unittest.TestCase):
+    def setUp(self) -> None:
+        self.installs = 0
+        self.install_error: Exception | None = None
+        self.install_gate = ThreadingEvent()
+        self.install_gate.set()
+        self.lock = MagicMock()
+        LaunchedBrowser.launched, LaunchedBrowser.fail_with = [], None
+        self.stderr = io.StringIO()
+        self.patches = (
+            patch.object(download_deps, 'use_camoufox', self.use_camoufox),
+            patch('calibre.web.automate.browser.Browser', LaunchedBrowser),
+            patch.object(metadata, 'state', None),
+            patch.object(metadata, 'launcher', None),
+            redirect_stderr(self.stderr),
+        )
+        for p in self.patches:
+            p.__enter__()
+
+    def tearDown(self) -> None:
+        self.install_gate.set()
+        for p in reversed(self.patches):
+            p.__exit__(None, None, None)
+
+    def use_camoufox(self, allow_prerelease: bool = False) -> tuple[download_deps.Install, MagicMock]:
+        self.installs += 1
+        self.install_gate.wait(10)
+        if self.install_error is not None:
+            raise self.install_error
+        return download_deps.Install('/the/binary', '1.0'), self.lock
+
+    def request(self, source: str = 'amazon', action: str = 'search', timeout: float = 5) -> Coroutine[Any, Any, dict[str, Any]]:
+        return metadata.impl_handle_request(INPUT_DATA, {'source': source, 'action': action, 'args': {}, 'deadline': time.time() + timeout})
+
+    def test_metadata_launcher_launches(self) -> None:
+        async def t() -> None:
+            await metadata.impl_setup_browser(INPUT_DATA)
+            self.assertEqual(await metadata.impl_handle_request(INPUT_DATA, {'action': 'launch'}), {'module_version': metadata.module_version})
+            state = metadata.state
+            assert state is not None
+            self.assertIs(state.browser, LaunchedBrowser.launched[0])
+            self.assertEqual(LaunchedBrowser.launched[0].install, download_deps.Install('/the/binary', '1.0'))
+            # Our lock is released once the browser has a lock of its own
+            self.lock.release.assert_called_once()
+            # Requests are handed to the state
+            with self.assertRaisesRegex(KeyError, 'no-such-source'):
+                await self.request('no-such-source')
+            self.assertEqual(self.installs, 1)
+            metadata.impl_finalize(INPUT_DATA)
+            self.assertIsNone(metadata.state)
+
+        run(t())
+
+    def test_metadata_launcher_install_failure(self) -> None:
+        retry_at = time.time() + 1000
+        self.install_error = download_deps.InstallFailed('There is no space', 'the traceback', retry_at)
+
+        async def t() -> None:
+            await metadata.impl_setup_browser(INPUT_DATA)
+            for _ in range(3):
+                with self.assertRaises(BrowserUnavailable) as cm:
+                    await self.request()
+                self.assertEqual(cm.exception.message, 'There is no space')
+                self.assertEqual(str(cm.exception), 'There is no space\n\nthe traceback')
+            with self.assertRaisesRegex(BrowserUnavailable, 'There is no space'):
+                await metadata.impl_handle_request(INPUT_DATA, {'action': 'launch'})
+            # Not retried by every request
+            self.assertEqual(self.installs, 1)
+            launcher = metadata.launcher
+            assert launcher is not None
+            self.assertEqual(launcher.retry_at, retry_at)
+            # but once it is time to try again
+            launcher.retry_at = time.time() - 1
+            self.install_error = None
+            self.assertEqual((await metadata.impl_handle_request(INPUT_DATA, {'action': 'launch'}))['module_version'], metadata.module_version)
+            self.assertEqual(self.installs, 2)
+            metadata.impl_finalize(INPUT_DATA)
+
+        run(t())
+
+    def test_metadata_launcher_launch_failure(self) -> None:
+        LaunchedBrowser.fail_with = Error('The browser crashed')
+
+        async def t() -> None:
+            await metadata.impl_setup_browser(INPUT_DATA)
+            with self.assertRaisesRegex(BrowserUnavailable, 'Failed to start the browser .* The browser crashed'):
+                await metadata.impl_handle_request(INPUT_DATA, {'action': 'launch'})
+            launcher = metadata.launcher
+            assert launcher is not None
+            self.assertAlmostEqual(launcher.retry_at, time.time() + metadata.LAUNCH_RETRY_INTERVAL, delta=60)
+            self.lock.release.assert_called_once()
+            # Failing to find out what to install is cheap to try again
+            launcher.retry_at = time.time() - 1
+            LaunchedBrowser.fail_with = None
+            self.install_error = OSError('offline')
+            with self.assertRaisesRegex(BrowserUnavailable, 'Failed to install .* offline'):
+                await metadata.impl_handle_request(INPUT_DATA, {'action': 'launch'})
+            self.assertAlmostEqual(launcher.retry_at, time.time() + metadata.LAUNCH_RETRY_INTERVAL, delta=60)
+            metadata.impl_finalize(INPUT_DATA)
+
+        run(t())
+
+    def test_metadata_launcher_installing(self) -> None:
+        self.install_gate.clear()
+        installer = download_deps.camoufox_installer
+
+        async def t() -> None:
+            await metadata.impl_setup_browser(INPUT_DATA)
+            # A download in progress is reported straight away, with how far along it is
+            installer.install_progress = download_deps.InstallProgress('downloading', 5 * 1024**2, 10 * 1024**2)
+            try:
+                start = time.monotonic()
+                with self.assertRaisesRegex(BrowserUnavailable, 'being installed.*5 MB of 10 MB downloaded') as cm:
+                    await self.request()
+                self.assertLess(time.monotonic() - start, metadata.INSTALL_WAIT)
+                self.assertNotIn('Traceback', str(cm.exception))
+            finally:
+                installer.install_progress = None
+            # Otherwise, after waiting a little, as there might be an existing install
+            with patch.object(metadata, 'INSTALL_WAIT', 0.2), self.assertRaisesRegex(BrowserUnavailable, 'being installed'):
+                await self.request()
+            self.install_gate.set()
+            await metadata.impl_handle_request(INPUT_DATA, {'action': 'launch'})
+            self.assertEqual(self.installs, 1)
+            metadata.impl_finalize(INPUT_DATA)
+
+        run(t())
+
+    def test_metadata_launcher_deadline(self) -> None:
+        self.install_gate.clear()
+
+        async def t() -> None:
+            await metadata.impl_setup_browser(INPUT_DATA)
+            with self.assertRaisesRegex(BrowserUnavailable, 'Timed out'):
+                await self.request(timeout=0.2)
+            # So that the install thread does not hold up shutting down
+            self.install_gate.set()
+            metadata.impl_finalize(INPUT_DATA)
+
+        run(t())
+
+    def test_metadata_launcher_old_calibre(self) -> None:
+        # calibre < 9.19 has no InstallFailed and no install progress, as this
+        # module is loaded into older calibre versions from the calibre website
+        old = SimpleNamespace(use_camoufox=self.use_camoufox, camoufox_installer=SimpleNamespace())
+        self.install_error = OSError(28, 'No space left on device')
+
+        async def t() -> None:
+            await metadata.impl_setup_browser(INPUT_DATA)
+            with self.assertRaisesRegex(BrowserUnavailable, 'Failed to install .*No space left on device') as cm:
+                await metadata.impl_handle_request(INPUT_DATA, {'action': 'launch'})
+            self.assertIn('OSError', str(cm.exception))
+            launcher = metadata.launcher
+            assert launcher is not None
+            # Not tried again for a long time, as older calibre does not record failures itself
+            self.assertAlmostEqual(launcher.retry_at, time.time() + metadata.INSTALL_RETRY_INTERVAL, delta=60)
+            with self.assertRaises(BrowserUnavailable):
+                await self.request()
+            self.assertEqual(self.installs, 1)
+            metadata.impl_finalize(INPUT_DATA)
+            self.assertIn('being installed', metadata.installing_message())
+            self.assertFalse(metadata.is_installing())
+
+        with patch.object(metadata, 'download_deps', old):
+            run(t())
+
+
+INPUT_DATA: dict[str, Any] = {'warmup': False}
 
 
 class TestAmazonPlugin(unittest.TestCase):
@@ -1104,7 +1387,7 @@ class TestGoogleImagesPlugin(unittest.TestCase):
 
 def find_tests() -> unittest.TestSuite:
     ans = unittest.TestSuite()
-    for cls in (TestPageAnalysis, TestTabPool, TestHandlers, TestQueueing, TestWorkerProcess, TestAmazonPlugin, TestGoogleImagesPlugin):
+    for cls in (TestPageAnalysis, TestTabPool, TestHandlers, TestQueueing, TestWorkerProcess, TestLauncher, TestAmazonPlugin, TestGoogleImagesPlugin):
         ans.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
     return ans
 
