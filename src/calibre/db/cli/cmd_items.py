@@ -1,19 +1,31 @@
 #!/usr/bin/env python
 # License: GPLv3 Copyright: 2026, softwaregames1
 
+from typing import TYPE_CHECKING, cast
+
+from calibre.db.cli.utils import args_to_action
 from calibre.db.tables import ManyToOneTable
 from calibre.srv.changes import metadata
 from calibre.utils.localization import _, ngettext
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
+    from optparse import Values
+
+    from calibre.db.cache import Cache
+    from calibre.db.cli.main import DBContext
+    from calibre.srv.changes import ChangeEvent
+    from calibre.utils.config import OptionParser
+
 readonly = False
 version = 0  # change this if you change signature of implementation()
-
+ACTIONS = ('rename', 'remove')
 # Fields whose items are numbers, languages or other data that cannot be
 # meaningfully renamed or removed by name
 UNSUPPORTED_FIELDS = frozenset({'formats', 'identifiers', 'languages', 'rating'})
 
 
-def supported_fields(db):
+def supported_fields(db: Cache) -> set[str]:
     ans = set()
     for field in db.fields:
         f = db.fields[field]
@@ -22,7 +34,7 @@ def supported_fields(db):
     return ans
 
 
-def item_ids_for(db, field, item_names):
+def item_ids_for(db: Cache, field: str, item_names: Iterable[str]) -> tuple[list[int], str] | tuple[None, str]:
     # Must be called with the write lock held
     ans = []
     for item_name in item_names:
@@ -33,7 +45,7 @@ def item_ids_for(db, field, item_names):
     return ans, ''
 
 
-def check_args(action, field, new_name):
+def check_args(action: str, field: str, new_name: str) -> str:
     if action == 'rename':
         if not new_name.strip():
             return _('The new name must not be empty')
@@ -45,7 +57,9 @@ def check_args(action, field, new_name):
     return ''
 
 
-def implementation(db, notify_changes, action, field, item_names, new_name, search):
+def implementation(
+    db: Cache, notify_changes: Callable[[ChangeEvent], None] | None, action: str, field: str, item_names: Sequence[str], new_name: str, search: str | None
+) -> tuple[bool, str | int]:
     from calibre.utils.search_query_parser import ParseException
 
     err = check_args(action, field, new_name)
@@ -79,7 +93,7 @@ def implementation(db, notify_changes, action, field, item_names, new_name, sear
     return True, len(affected_books)
 
 
-def option_parser(get_parser, args):
+def option_parser(get_parser: Callable[[str], OptionParser], args: Sequence[str]) -> OptionParser:
     parser = get_parser(
         _(
             '''\
@@ -112,12 +126,8 @@ Remove one or more items from all books. Authors cannot be removed:
     return parser
 
 
-def main(opts, args, dbctx):
-    if not args:
-        raise SystemExit(_('Error: You must specify an action, one of: (rename|remove)'))
-    action, args = args[0], args[1:]
-    if action not in ('rename', 'remove'):
-        raise SystemExit(_('Error: Action {} not recognized, must be one of: (rename|remove)').format(action))
+def main(opts: Values, args: list[str], dbctx: DBContext) -> int:
+    action, args = args_to_action(args, ACTIONS)
     if action == 'rename':
         if len(args) != 3:
             raise SystemExit(_('Error: You must specify a field, the name of an item and its new name'))
@@ -129,8 +139,8 @@ def main(opts, args, dbctx):
     err = check_args(action, field, new_name)
     if err:
         raise SystemExit(err)
-    ok, ans = dbctx.run('items', action, field, item_names, new_name, opts.search)
+    ok, ans = cast('tuple[bool, str | int]', dbctx.run('items', action, field, item_names, new_name, opts.search))
     if not ok:
         raise SystemExit(ans)
-    print(ngettext('One book changed', '{} books changed', ans).format(ans))
+    print(ngettext('One book changed', '{} books changed', ans).format(ans))  # ty: ignore[invalid-argument-type]
     return 0

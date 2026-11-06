@@ -4,11 +4,13 @@
 import json
 import posixpath
 import sys
-from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum
 from functools import cached_property
-from typing import IO, NamedTuple
+from typing import IO, TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class Frame(NamedTuple):
@@ -207,13 +209,13 @@ class BugType(Enum):
 
 
 class CrashReportBase:
-    def __init__(self, metadata: Mapping, data: str, filename: str = None):
+    def __init__(self, metadata: Mapping, data: str, filename: str = None) -> None:
         self.filename = filename
         self._metadata = metadata
         self._data = data
         self._parse()
 
-    def _parse(self):
+    def _parse(self) -> None:
         self._is_json = False
         try:
             modified_data = self._data
@@ -235,7 +237,7 @@ class CrashReportBase:
         return self._metadata['bug_type']
 
     @cached_property
-    def incident_id(self):
+    def incident_id(self) -> str | None:
         return self._metadata.get('incident_id')
 
     @cached_property
@@ -362,7 +364,7 @@ class UserModeCrashReport(CrashReportBase):
         return result
 
     @cached_property
-    def exception_type(self):
+    def exception_type(self) -> str | None:
         if self._is_json:
             return self._data['exception'].get('type')
         else:

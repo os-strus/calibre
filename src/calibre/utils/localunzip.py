@@ -14,9 +14,10 @@ import sys
 from collections import OrderedDict
 from compression import zlib
 from struct import calcsize, pack, unpack
-from typing import NamedTuple
+from typing import IO, NamedTuple
 
 from calibre.ptempfile import SpooledTemporaryFile
+from calibre.utils import StreamOrPath
 
 HEADER_SIG = 0x04034B50
 HEADER_BYTE_SIG = pack(b'<L', HEADER_SIG)
@@ -50,45 +51,15 @@ class LocalHeader(NamedTuple):
 
 
 if hasattr(sys, 'getwindowsversion'):
-    windows_reserved_filenames = (
-        'CON',
-        'PRN',
-        'AUX',
-        'CLOCK$',
-        'NUL',
-        'COM0',
-        'COM1',
-        'COM2',
-        'COM3',
-        'COM4',
-        'COM5',
-        'COM6',
-        'COM7',
-        'COM8',
-        'COM9',
-        'LPT0',
-        'LPT1',
-        'LPT2',
-        'LPT3',
-        'LPT4',
-        'LPT5',
-        'LPT6',
-        'LPT7',
-        'LPT8',
-        'LPT9',
-    )
-
-    def is_reserved_filename(x):
-        base = x.partition('.')[0].upper()
-        return base in windows_reserved_filenames
+    from calibre.utils.filenames import is_windows_reserved_filename as is_reserved_filename
 
 else:
 
-    def is_reserved_filename(x):
+    def is_reserved_filename(x: str) -> bool:
         return False
 
 
-def decode_arcname(name):
+def decode_arcname(name: str | bytes) -> str:
     if isinstance(name, bytes):
         from calibre.ebooks.chardet import detect
 
@@ -104,7 +75,7 @@ def decode_arcname(name):
     return name
 
 
-def find_local_header(f):
+def find_local_header(f: IO[bytes]) -> LocalHeader | None:
     pos = f.tell()
     raw = f.read(50 * 1024)
     try:
@@ -128,7 +99,7 @@ class DataDescriptor(NamedTuple):
     uncompressed_size: int
 
 
-def find_data_descriptor(f):
+def find_data_descriptor(f: IO[bytes]) -> DataDescriptor:
     pos = f.tell()
     raw = b'a' * 16
     try:
@@ -147,7 +118,7 @@ def find_data_descriptor(f):
         f.seek(pos)
 
 
-def read_local_file_header(f):
+def read_local_file_header(f: IO[bytes]) -> LocalHeader | None:
     pos = f.tell()
     raw = f.read(local_header_sz)
     if len(raw) != local_header_sz:
@@ -193,12 +164,12 @@ def read_local_file_header(f):
     return LocalHeader(*(header[:-2] + (fname, extra)))
 
 
-def read_compressed_data(f, header):
+def read_compressed_data(f: IO[bytes], header: LocalHeader) -> bytes:
     cdata = f.read(header.compressed_size)
     return cdata
 
 
-def copy_stored_file(src, size, dest):
+def copy_stored_file(src: IO[bytes], size: int, dest: IO[bytes]) -> None:
     read = 0
     amt = min(size, 20 * 1024)
     while read < size:
@@ -209,7 +180,7 @@ def copy_stored_file(src, size, dest):
         read += len(raw)
 
 
-def copy_compressed_file(src, size, dest):
+def copy_compressed_file(src: IO[bytes], size: int, dest: IO[bytes]) -> None:
     d = zlib.decompressobj(-15)
     read = 0
     amt = min(size, 20 * 1024)
@@ -228,7 +199,7 @@ def copy_compressed_file(src, size, dest):
                 raise ValueError(f'This ZIP file contains a ZIP bomb in {os.path.basename(dest.name)}')
 
 
-def _extractall(f, path=None, file_info=None):
+def _extractall(f: IO[bytes], path: str | None = None, file_info: dict[str | None, tuple[int, LocalHeader]] | None = None) -> None:
     found = False
     while True:
         header = read_local_file_header(f)
@@ -239,10 +210,12 @@ def _extractall(f, path=None, file_info=None):
         found = True
         # Sanitize path changing absolute to relative paths and removing .. and
         # .
-        fname = header.filename.replace(os.sep, '/')
+        fname = (header.filename or '').replace(os.sep, '/')
         fname = os.path.splitdrive(fname)[1]
         parts = tuple(x for x in fname.split('/') if x not in {'', os.path.pardir, os.path.curdir})
         if not parts:
+            # Skip over the data for this entry
+            f.seek(f.tell() + seekval)
             continue
         if header.uncompressed_size == 0:
             # Directory
@@ -262,7 +235,7 @@ def _extractall(f, path=None, file_info=None):
                 os.makedirs(bdir)
             dest = os.path.join(path, *parts)
             try:
-                df = open(dest, 'wb')
+                df = open(dest, 'wb')  # ruff: ignore[open-file-with-context-handler]
             except OSError:
                 if is_reserved_filename(os.path.basename(dest)):
                     raise ValueError(f'This ZIP file contains a file with a reserved filename that cannot be processed on Windows: {os.path.basename(dest)}')
@@ -279,36 +252,30 @@ def _extractall(f, path=None, file_info=None):
         raise ValueError('Not a ZIP file')
 
 
-def extractall(path_or_stream, path=None):
-    f = path_or_stream
-    close_at_end = False
-    if not hasattr(f, 'read'):
-        f = open(f, 'rb')
-        close_at_end = True
-    if path is None:
-        path = os.getcwd()
-    pos = f.tell()
-    try:
-        _extractall(f, path)
-    finally:
-        f.seek(pos)
-        if close_at_end:
-            f.close()
+def extractall(path_or_stream: str | bytes | IO[bytes], path: str | None = None) -> None:
+    with StreamOrPath(path_or_stream, 'rb') as f:
+        if path is None:
+            path = os.getcwd()
+        pos = f.tell()
+        try:
+            _extractall(f, path)
+        finally:
+            f.seek(pos)
 
 
 class LocalZipFile:
-    def __init__(self, stream):
-        self.file_info = OrderedDict()
+    def __init__(self, stream: IO[bytes]) -> None:
+        self.file_info: OrderedDict[str | None, tuple[int, LocalHeader]] = OrderedDict()
         _extractall(stream, file_info=self.file_info)
         self.stream = stream
 
-    def _get_file_info(self, name):
+    def _get_file_info(self, name: str | None) -> tuple[int, LocalHeader]:
         fi = self.file_info.get(name)
         if fi is None:
             raise NoSuchFile(f'This ZIP container has no file named: {name}')
         return fi
 
-    def open(self, name, spool_size=5 * 1024 * 1024):
+    def open(self, name: str | LocalHeader | None, spool_size: int = 5 * 1024 * 1024) -> SpooledTemporaryFile:
         if isinstance(name, LocalHeader):
             name = name.filename
         offset, header = self._get_file_info(name)
@@ -322,22 +289,24 @@ class LocalZipFile:
         dest.seek(0)
         return dest
 
-    def getinfo(self, name):
+    def getinfo(self, name: str) -> LocalHeader:
         offset, header = self._get_file_info(name)
         return header
 
-    def read(self, name, spool_size=5 * 1024 * 1024):
+    def read(self, name: str | LocalHeader | None, spool_size: int = 5 * 1024 * 1024) -> bytes:
         with self.open(name, spool_size=spool_size) as f:
             return f.read()
 
-    def extractall(self, path=None):
+    def extractall(self, path: str | None = None) -> None:
         self.stream.seek(0)
         _extractall(self.stream, path=(path or os.getcwd()))
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-    def safe_replace(self, name, datastream, extra_replacements=None, add_missing=False):
+    def safe_replace(
+        self, name: str, datastream: bytes | IO[bytes], extra_replacements: dict[str, bytes | IO[bytes]] | None = None, add_missing: bool = False
+    ) -> None:
         from calibre.utils.zipfile import ZipFile, ZipInfo
 
         if extra_replacements is None:
@@ -347,7 +316,7 @@ class LocalZipFile:
         names = frozenset(list(replacements.keys()))
         found = set()
 
-        def rbytes(name):
+        def rbytes(name: str) -> bytes:
             r = replacements[name]
             if not isinstance(r, bytes):
                 r = r.read()
@@ -362,7 +331,7 @@ class LocalZipFile:
                     ztemp.writestr(zi, rbytes(header.filename))
                     found.add(header.filename)
                 else:
-                    ztemp.writestr(header.filename, self.read(header.filename, spool_size=0))
+                    ztemp.writestr(header.filename, self.read(header.filename, spool_size=0))  # ty: ignore[invalid-argument-type]
             if add_missing:
                 for name in names - found:
                     ztemp.writestr(name, rbytes(name))

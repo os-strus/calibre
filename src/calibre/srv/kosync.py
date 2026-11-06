@@ -13,10 +13,21 @@ import math
 import re
 import time
 from hashlib import md5
+from typing import IO, TYPE_CHECKING
+
+import apsw
 
 from calibre.srv.errors import HTTPForbidden
 from calibre.srv.routes import endpoint
 from calibre.srv.routes import json as json_postprocess
+
+if TYPE_CHECKING:
+    from calibre.db.cache import Cache
+    from calibre.srv.handler import Context
+    from calibre.srv.http_response import RequestData
+
+    type ErrorSpec = tuple[int, int, str]
+    type JSONResponse = dict[str, object]
 
 # The error codes and messages used by the reference server, KOReader displays
 # the message to the user
@@ -33,25 +44,56 @@ document_pat = re.compile(r'[A-Za-z0-9_]+')
 MAX_FIELD_LENGTH = 4096
 
 
-def error(rd, err):
+def partial_md5(stream: IO[bytes]) -> str:
+    """KOReader's util.partialMD5: sample up to twelve 1 KiB blocks, preserving the file position."""
+    position = stream.tell()
+    digest = md5()
+    try:
+        for i in range(-1, 11):
+            stream.seek(0 if i == -1 else 1024 << (2 * i))
+            sample = stream.read(1024)
+            if not sample:
+                break
+            digest.update(sample)
+    finally:
+        stream.seek(position)
+    return digest.hexdigest()
+
+
+def register_download(ctx: Context, db: Cache, book_id: int, fmt: str, output: IO[bytes], source_document: str | None) -> None:
+    """
+    Remember the checksum of a downloaded book file, and of the library file it was created from,
+    so that KOReader positions synced via either are shared. The book is identified by its UUID,
+    which survives metadata edits and distinguishes books in different libraries, and its format,
+    since positions cannot be used across formats.
+    """
+    try:
+        document = partial_md5(output)
+        book = f'calibre:{db.library_id}:{db.field_for("uuid", book_id)}:{fmt.upper()}'
+        ctx.user_manager.register_kosync_documents(book, document, *((source_document,) if source_document else ()))
+    except (OSError, apsw.Error) as err:
+        log_warning(ctx, f'Failed to register KOReader checksums for book {book_id}: {err}')
+
+
+def error(rd: RequestData, err: ErrorSpec) -> JSONResponse:
     rd.status_code, code, message = err
     return {'code': code, 'message': message}
 
 
-def ban_key(rd) -> str:
+def ban_key(rd: RequestData) -> str:
     # Failed logins via these endpoints are banned separately from other
     # logins, so that a device retrying with a stale password in the background
     # does not lock out everyone sharing its IP address, such as all users of a
     # reverse proxy
-    return 'kosync:' + rd.remote_addr
+    return f'kosync:{rd.remote_addr}'
 
 
-def log_warning(ctx, msg: str) -> None:
+def log_warning(ctx: Context, msg: str) -> None:
     if ctx.log is not None:
         ctx.log.warn(msg)
 
 
-def authorized_user(ctx, rd) -> str | None:
+def authorized_user(ctx: Context, rd: RequestData) -> str | None:
     username = rd.inheaders.get('X-Auth-User', '')
     key = rd.inheaders.get('X-Auth-Key', '')
     # Header values that are not valid UTF-8 are bytes
@@ -74,7 +116,7 @@ def authorized_user(ctx, rd) -> str | None:
     return None
 
 
-def check_user(ctx, rd):
+def check_user(ctx: Context, rd: RequestData) -> tuple[str, None] | tuple[None, JSONResponse]:
     # Return the authorized username or an error response
     ac = ctx.auth_controller
     if ac is not None and (ac.ban_list.is_banned(rd.remote_addr) or ac.ban_list.is_banned(ban_key(rd))):
@@ -86,22 +128,24 @@ def check_user(ctx, rd):
     if ctx.opts.auth:
         # Used by check_for_write_access() and the access log
         rd.username = username
+    # Start recording the checksums of downloaded files, see register_download()
+    ctx.user_manager.mark_kosync_in_use()
     return username, None
 
 
 @endpoint('/kosync/healthcheck', auth_required=False, postprocess=json_postprocess, cache_control='no-cache')
-def healthcheck(ctx, rd):
+def healthcheck(ctx: Context, rd: RequestData) -> JSONResponse:
     return {'state': 'OK'}
 
 
 @endpoint('/kosync/users/create', auth_required=False, methods=('POST',), postprocess=json_postprocess, cache_control='no-cache')
-def create_user(ctx, rd):
+def create_user(ctx: Context, rd: RequestData) -> JSONResponse:
     # Users are managed by calibre, not via KOReader
     return error(rd, REGISTRATION_DISABLED)
 
 
 @endpoint('/kosync/users/auth', auth_required=False, postprocess=json_postprocess, cache_control='no-cache')
-def auth_user(ctx, rd):
+def auth_user(ctx: Context, rd: RequestData) -> JSONResponse:
     username, err = check_user(ctx, rd)
     return err or {'authorized': 'OK'}
 
@@ -116,20 +160,21 @@ def auth_user(ctx, rd):
     postprocess=json_postprocess,
     cache_control='no-cache',
 )
-def progress(ctx, rd, document):
+def progress(ctx: Context, rd: RequestData, document: str) -> JSONResponse:
     username, err = check_user(ctx, rd)
     if err is not None:
         return err
+    assert username is not None  # check_user() returns an error when there is no username
     if rd.method == 'PUT':
         return update_progress(ctx, rd, username)
     return get_progress(ctx, rd, username, document)
 
 
-def valid_string(x) -> bool:
+def valid_string(x: object) -> bool:
     return isinstance(x, str) and 0 < len(x) <= MAX_FIELD_LENGTH
 
 
-def update_progress(ctx, rd, username):
+def update_progress(ctx: Context, rd: RequestData, username: str) -> JSONResponse:
     try:
         # Anonymous users may only make changes from trusted IP addresses and
         # readonly users not at all, as for the rest of the server
@@ -170,7 +215,7 @@ def update_progress(ctx, rd, username):
     return {'document': document, 'timestamp': timestamp}
 
 
-def get_progress(ctx, rd, username, document):
+def get_progress(ctx: Context, rd: RequestData, username: str, document: str) -> JSONResponse:
     if not document or ':' in document:
         return error(rd, DOCUMENT_MISSING)
     return ctx.user_manager.kosync_progress(username, document, anonymous=not ctx.opts.auth) or {}

@@ -3,21 +3,35 @@
 
 import os
 import sys
+from typing import TYPE_CHECKING, cast
 
 from calibre import prints
+from calibre.db import FTSQueryError
+from calibre.db.cli.utils import args_to_action, for_terminal
 from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.html2text import html2text
 from calibre.utils.localization import _
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+    from optparse import Values
+
+    from calibre.db.cache import Cache
+    from calibre.db.cli.main import DBContext
+    from calibre.srv.changes import ChangeEvent
+    from calibre.utils.config import OptionParser
+
 readonly = False
 version = 0  # change this if you change signature of implementation()
+ACTIONS = ('list', 'search', 'show', 'set', 'remove')
+ACTION_DEFAULT = 'list'
 
 
-def unsupported_field_error(db, field):
-    return _('The field {0} does not support notes. Fields that support notes are: {1}').format(field, ', '.join(sorted(db.field_supports_notes())))
+def unsupported_field_error(db: Cache, field: str) -> str:
+    return _('The field {0} does not support notes. Fields that support notes are: {1}').format(field, ', '.join(sorted(db.field_supports_notes())))  # ty: ignore[invalid-argument-type]
 
 
-def item_id_for(db, field, item_name):
+def item_id_for(db: Cache, field: str, item_name: str) -> tuple[int, str] | tuple[None, str]:
     if not db.field_supports_notes(field):
         return None, unsupported_field_error(db, field)
     item_id = db.get_item_id(field, item_name)
@@ -26,7 +40,7 @@ def item_id_for(db, field, item_name):
     return item_id, ''
 
 
-def import_note_data(db, field, item_id, html):
+def import_note_data(db: Cache, field: str, item_id: int, html: str | bytes) -> None:
     # Import from an empty directory so that relative and file: image URLs in
     # the HTML cannot be used to read arbitrary files into the note
     with TemporaryDirectory() as tdir:
@@ -36,20 +50,41 @@ def import_note_data(db, field, item_id, html):
         db.import_note(field, item_id, path)
 
 
-def implementation(db, notify_changes, action, *args):
+def implementation(
+    db: Cache, notify_changes: Callable[[ChangeEvent], None] | None, action: str, *args: object
+) -> tuple[bool, str | list[tuple[str, str, str]] | list[tuple[str, str]]]:
     is_remote = notify_changes is not None
+    if action == 'search':
+        query, field = cast('tuple[str, str | None]', args)
+        # Searching notes needs an exclusive lock. Keep it until the item names
+        # are read as well, so that items cannot be renamed or removed in between.
+        with db.quiet_write_lock:
+            if field is not None and not db.field_supports_notes(field):
+                return False, unsupported_field_error(db, field)
+            try:
+                results = db._search_notes(
+                    query,
+                    restrict_to_fields=(field,) if field is not None else (),
+                    highlight_start='',
+                    highlight_end='',
+                    snippet_size=32,
+                )
+            except FTSQueryError as err:
+                return False, str(err)
+            ans = [(r['field'], db._get_item_name(r['field'], r['item_id']), r['text']) for r in results]
+        return True, ans
     if action == 'list':
-        field = args[0] if args else None
+        field = cast('str | None', args[0]) if args else None
         with db.safe_read_lock:
             if field is not None and not db.field_supports_notes(field):
                 return False, unsupported_field_error(db, field)
             items = {field: db.get_all_items_that_have_notes(field)} if field else db.get_all_items_that_have_notes()
             ans = []
-            for field_name, item_ids in items.items():
+            for field_name, item_ids in items.items():  # ty: ignore[unresolved-attribute]
                 id_map = db.get_id_map(field_name)
                 ans.extend((field_name, id_map[item_id]) for item_id in item_ids if item_id in id_map)
         return True, sorted(ans)
-    field, item_name = args[:2]
+    field, item_name = cast('tuple[str, str]', args[:2])
     with db.safe_read_lock:
         item_id, err = item_id_for(db, field, item_name)
     if item_id is None:
@@ -61,7 +96,7 @@ def implementation(db, notify_changes, action, *args):
         doc = db.notes_for(field, item_id)
         return True, html2text(doc, default_image_alt=' ') if doc else ''
     if action == 'set':
-        html_or_path, is_path = args[2:4]
+        html_or_path, is_path = cast('tuple[str | bytes, bool]', args[2:4])
         if is_path:
             if is_remote:
                 return False, _('Cannot import notes from files on the server, send the HTML instead')
@@ -75,20 +110,28 @@ def implementation(db, notify_changes, action, *args):
     return False, _('Unknown action: {}').format(action)
 
 
-def option_parser(get_parser, args):
+def option_parser(get_parser: Callable[[str], OptionParser], args: Sequence[str]) -> OptionParser:
     parser = get_parser(
         _(
             '''\
-%prog notes [options] (list|show|set|remove)
+%prog notes [options] [list|search|show|set|remove]
 
 Manage the notes attached to items such as authors, series, tags and
 publishers. FIELD is the lookup name of the field, for example: authors,
 series, tags, publisher or #mycolumn. ITEM is the name of the item, for
 example the name of an author. Items are matched case insensitively.
 
-List the items that have notes, optionally only those in the specified field:
+List the items that have notes, optionally only those in the specified field.
+This is the default action:
 
 %prog notes list [FIELD]
+
+Search the text of notes using the same SQLite full text search syntax as
+the Browse notes tool in calibre. Print the field, item name and an excerpt
+for each match. Use --field to search only the notes in a particular field:
+
+%prog notes search "search expression"
+%prog notes search --field authors "search expression"
 
 Print the note for an item as Markdown formatted text, or with --as-html as
 an HTML document with any images embedded, suitable for use with set:
@@ -110,6 +153,11 @@ Remove the note for an item:
         )
     )
     parser.add_option(
+        '--field',
+        default=None,
+        help=_('When searching notes, restrict the search to this field, for example: authors, tags or #mycolumn'),
+    )
+    parser.add_option(
         '--as-html',
         default=False,
         action='store_true',
@@ -118,25 +166,32 @@ Remove the note for an item:
     return parser
 
 
-def run(dbctx, *args):
-    ok, ans = dbctx.run('notes', *args)
+def run(dbctx: DBContext, *args: object) -> object:
+    ok, ans = cast('tuple[bool, object]', dbctx.run('notes', *args))
     if not ok:
         raise SystemExit(ans)
     return ans
 
 
-def main(opts, args, dbctx):
-    if not args:
-        raise SystemExit(_('Error: You must specify an action, one of: (list|show|set|remove)'))
-    action, args = args[0], args[1:]
+def main(opts: Values, args: list[str], dbctx: DBContext) -> int:
+    action, args = args_to_action(args, ACTIONS, default_action=ACTION_DEFAULT)
+    if opts.field is not None and action != 'search':
+        raise SystemExit(_('Error: The --field option can only be used with search'))
+    if action == 'search':
+        if len(args) != 1 or not args[0].strip():
+            raise SystemExit(_('Error: You must specify one non-empty search expression'))
+        if opts.as_html:
+            raise SystemExit(_('Error: The --as-html option cannot be used with search'))
+        for field, item_name, text in cast('list[tuple[str, str, str]]', run(dbctx, 'search', args[0], opts.field)):
+            # Keep each result on one line and remove terminal control characters.
+            prints(for_terminal('\t'.join(' '.join(x.split()) for x in (field, item_name or '', text))))
+        return 0
     if action == 'list':
         if len(args) > 1:
             raise SystemExit(_('Error: You can specify at most one field to list'))
-        for field, item_name in run(dbctx, 'list', *args):
+        for field, item_name in cast('list[tuple[str, str]]', run(dbctx, 'list', *args)):
             prints(f'{field}: {item_name}')
         return 0
-    if action not in ('show', 'set', 'remove'):
-        raise SystemExit(_('Error: Action {} not recognized, must be one of: (list|show|set|remove)').format(action))
     if len(args) < 2:
         raise SystemExit(_('Error: You must specify a field and the name of an item'))
     if action == 'set' and len(args) < 3:

@@ -6,12 +6,18 @@ import shutil
 import tempfile
 import time
 from operator import itemgetter
+from typing import TYPE_CHECKING
 
 from calibre.db.tests.base import BaseTest
 from calibre.utils.resources import get_image_path
 
+if TYPE_CHECKING:
+    from calibre.db.cache import Cache
+    from calibre.db.notes.connect import Notes
+    from calibre.db.restore import Restore
 
-def test_notes_restore(self: NotesTest):
+
+def test_notes_restore(self: NotesTest) -> None:
     from calibre.db.restore import Restore
 
     # Restore creates a sibling temporary library. Avoid the extra clone directory to stay within Windows path limits.
@@ -34,7 +40,7 @@ def test_notes_restore(self: NotesTest):
     cache.backend.notes.set_backup_for('tags', 999, 'Gone', '<p>gone</p>', 'Gone\n<p>gone</p>', (gone_resource,))
     cache.dump_metadata()
 
-    def rebuild(cache):
+    def rebuild(cache: Cache) -> tuple[Restore, Cache]:
         cache.close()
         self.objects_to_close.remove(cache)
         restorer = Restore(library_path)
@@ -43,7 +49,7 @@ def test_notes_restore(self: NotesTest):
         self.assertFalse(restorer.failed_dirs or restorer.failed_restores, restorer.report)
         return restorer, self.init_cache(library_path)
 
-    def check_notes(cache):
+    def check_notes(cache: Cache) -> None:
         for tag, doc in docs.items():
             item_id = cache.get_item_id('tags', tag)
             self.ae(cache.notes_for('tags', item_id), doc)
@@ -70,7 +76,7 @@ def test_notes_restore(self: NotesTest):
     self.ae(cache.get_notes_resource(rhash)['data'], b'gone resource')
 
 
-def test_notes_api(self: NotesTest):
+def test_notes_api(self: NotesTest) -> None:
     cache, notes = self.create_notes_db()
     authors = sorted(cache.all_field_ids('authors'))
     self.ae(cache.notes_for('authors', authors[0]), '')
@@ -129,8 +135,18 @@ def test_notes_api(self: NotesTest):
     cache.set_notes_for('authors', authors[0], '', resource_hashes=())
     self.ae(len(os.listdir(notes.retired_dir)), 1)
 
+    # test that trimming copes with broken retired entries, removing them first
+    good = os.listdir(notes.retired_dir)
+    os.mkdir(os.path.join(notes.retired_dir, 'broken'))
+    orig, notes.max_retired_items = notes.max_retired_items, 1
+    try:
+        notes.trim_retired_dir()
+    finally:
+        notes.max_retired_items = orig
+    self.ae(os.listdir(notes.retired_dir), good)
 
-def test_cache_api(self: NotesTest):
+
+def test_cache_api(self: NotesTest) -> None:
     cache, notes = self.create_notes_db()
     authors = cache.field_for('authors', 1)
     author_id = cache.get_item_id('authors', authors[0])
@@ -227,7 +243,7 @@ def test_cache_api(self: NotesTest):
         self.ae(sorted(res, key=itemgetter('name')), sorted(res2, key=itemgetter('name')))
 
 
-def test_rename_and_delete_custom_column(self: NotesTest):
+def test_rename_and_delete_custom_column(self: NotesTest) -> None:
     cache, notes = self.create_notes_db()
     doc = 'notes for a custom column item'
 
@@ -269,7 +285,7 @@ def test_rename_and_delete_custom_column(self: NotesTest):
     self.assertIsNone(cache.get_notes_resource(h2))
 
 
-def test_fts(self: NotesTest):
+def test_fts(self: NotesTest) -> None:
     cache, _ = self.create_notes_db()
     authors = sorted(cache.all_field_ids('authors'))
     cache.set_notes_for('authors', authors[0], 'Wunderbar wunderkind common')
@@ -278,7 +294,7 @@ def test_fts(self: NotesTest):
     cache.set_notes_for('tags', tags[0], 'Tag me baby, one more time common')
     cache.set_notes_for('tags', tags[1], 'Jeepers, Batman! common')
 
-    def ids_for_search(x, restrict_to_fields=()):
+    def ids_for_search(x: str, restrict_to_fields: tuple[str, ...] = ()) -> set[tuple[str, int]]:
         return {(x['field'], x['item_id']) for x in cache.search_notes(x, restrict_to_fields=restrict_to_fields)}
 
     self.ae(ids_for_search('wunderbar'), {('authors', authors[0])})
@@ -295,14 +311,14 @@ def test_fts(self: NotesTest):
     self.ae(ids_for_search(' AND '.join(an.split()), ('authors',)), {('authors', authors[0])})
 
 
-def test_rollback_restores_note_files(self: NotesTest):
+def test_rollback_restores_note_files(self: NotesTest) -> None:
     # A set_metadata() that fails is rolled back, the files of notes it changed must be restored as well
     from calibre.db.constants import NOTES_DB_NAME
     from calibre.ebooks.metadata.book.base import Metadata
 
     cache, notes = self.create_notes_db()
 
-    def notes_files():
+    def notes_files() -> dict[str, bytes | None]:
         ans = {}
         for dirpath, dirnames, filenames in os.walk(notes.notes_dir):
             if dirpath == notes.notes_dir and 'staged' in dirnames:
@@ -331,12 +347,12 @@ def test_rollback_restores_note_files(self: NotesTest):
     mi.comments = 'changed comments'
     orig = cache._set_field
 
-    def failing_set_field(name, *a, **kw):
+    def failing_set_field(name: str, *a: object, **kw: object) -> set[int]:
         if name == 'comments':
             raise OSError('injected failure')
         return orig(name, *a, **kw)
 
-    def failing_set_metadata():
+    def failing_set_metadata() -> None:
         cache._set_field = failing_set_field
         try:
             self.assertRaises(OSError, cache.set_metadata, book_id, mi, set_title=False, set_authors=False)
@@ -395,22 +411,22 @@ def test_rollback_restores_note_files(self: NotesTest):
 class NotesTest(BaseTest):
     ae = BaseTest.assertEqual
 
-    def create_notes_db(self):
+    def create_notes_db(self) -> tuple[Cache, Notes]:
         cache = self.init_cache(self.cloned_library)
         cache.backend.notes.max_retired_items = 1
         return cache, cache.backend.notes
 
-    def test_notes(self):
+    def test_notes(self) -> None:
         test_fts(self)
         test_cache_api(self)
         test_notes_api(self)
         test_rename_and_delete_custom_column(self)
         test_rollback_restores_note_files(self)
 
-    def test_notes_restore(self):
+    def test_notes_restore(self) -> None:
         test_notes_restore(self)
 
-    def test_notes_import_data_url_images(self):
+    def test_notes_import_data_url_images(self) -> None:
         from base64 import standard_b64encode
         from urllib.parse import quote
 
@@ -425,7 +441,8 @@ class NotesTest(BaseTest):
         for char in '+/=':
             self.assertIn(char, payload, 'Test image must exercise all base64 special characters')
 
-        def check(metadata, filename='', encoded_payload=None, url_scheme='data'):
+        def check(metadata: str, filename: str = '', encoded_payload: str | None = None, url_scheme: str = 'data') -> None:
+
             cache.set_notes_for('authors', author_id, '')
             if encoded_payload is None:
                 encoded_payload = payload

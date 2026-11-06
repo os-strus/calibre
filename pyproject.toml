@@ -24,7 +24,7 @@ dependencies = [
     "typing-extensions == 4.15.0",  # needed by beautifulsoup4
 	"beautifulsoup4 == 4.14.3",
 	"regex == 2025.11.3",
-    "kovidgoyal-langtool == 1.1.0",
+    "kovidgoyal-langtool == 1.3.0",
 	"chardet == 5.2.0",
 	"msgpack == 1.2.3",
 	"Pygments == 2.20.0",
@@ -176,6 +176,7 @@ select = [
     'if-expr-with-true-false',
     'negate-equal-op',
     'negate-not-equal-op',
+    'open-file-with-context-handler',
     'reimplemented-builtin',
     'return-in-try-except-finally',
     'zip-dict-keys-and-values',
@@ -266,9 +267,6 @@ ignore = [
     'too-many-return-statements',
     'too-many-statements',
     'try-consider-else',
-    'typing-only-first-party-import',
-    'typing-only-standard-library-import',
-    'typing-only-third-party-import',
     'unnecessary-call-around-sorted',
     'unnecessary-dict-comprehension-for-iterable',
     'unnecessary-encode-utf8',
@@ -280,19 +278,19 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"recipes/*" = ['UP', 'FLY', 'DTZ', 'slice-to-remove-prefix-or-suffix']
-"recipes/nytimes*.recipe" = ['loop-variable-overrides-iterator']
+"recipes/*" = ['ANN', 'UP', 'FLY', 'DTZ', 'slice-to-remove-prefix-or-suffix']
 "manual/plugin_examples/interface_demo/ui.py" = ['useless-expression']
 "setup/changelog.py" = ['single-line-implicit-string-concatenation']
 "setup/plugins_mirror.py" = ['DTZ']
 "setup/{file-hosting-bw,run-calibre-worker,*-ci}.py" = ['invalid-module-name']
 "src/calibre/ebooks/metadata/sources/*" = ['UP', 'slice-to-remove-prefix-or-suffix']
 "src/calibre/ebooks/{BeautifulSoup,rtf2xml/ParseRtf}.py" = ['invalid-module-name']
-"src/calibre/gui2/store/stores/*" = ['UP', 'slice-to-remove-prefix-or-suffix']
 "src/calibre/{rpdb,utils/ipython}.py" = ['T1']
 "src/qt/*.py" = ['I', 'blank-lines-top-level']
 "src/qt/*.pyi" = ['I']
-"!{src/calibre/ai/**/*.py,src/calibre/web/automate/**/*.py}" = ['ANN']
+"src/calibre/gui2/*" = ['ANN']
+"{manual,setup,stubs}/*" = ['ANN']
+"src/{odf,qt}/*" = ['ANN']
 # These modules wrap a browser, whose operations can all block indefinitely on
 # the network, so every one of them takes an explicit timeout
 "src/calibre/web/automate/{camoufox,recipes}.py" = ['async-function-with-timeout']
@@ -321,7 +319,6 @@ extend-immutable-calls = [
     "qt.core.QModelIndex",
     "qt.core.QColor",
 ]
-
 
 [tool.ruff.lint.flake8-comprehensions]
 allow-dict-calls-with-keyword-arguments = true
@@ -462,7 +459,6 @@ exclude = [
 	'setup/*.py', 'setup.py', 'manual/**/*.py', 'bypy/**/*.py',
 	'**/tests/**',
     '.github/workflows/*.py',
-	'src/calibre/library/add_to_library.py',
 	'src/calibre/library/database.py',
 	'src/calibre/library/database2.py',
 	'src/calibre/library/sqlite.py',

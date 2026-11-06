@@ -3,16 +3,19 @@
 
 store_version = 1  # Needed for dynamic plugin loading
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from urllib.parse import urlencode
-
-from lxml import etree
 
 from calibre import browser
 from calibre.gui2 import open_url
 from calibre.gui2.store import StorePlugin
 from calibre.gui2.store.search_result import SearchResult
 from calibre.gui2.store.web_store_dialog import WebStoreDialog
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from lxml import etree
 
 BASE_URL = 'https://standardebooks.org'
 # The maximum number of results per page the site allows
@@ -71,7 +74,7 @@ class StandardEbooksStore(StorePlugin):
             query = query.decode('utf-8', 'replace')
         yield from search(query, max_results, timeout)
 
-    def open(self, gui=None, parent=None, detail_item=None, external=False):
+    def open(self, gui=None, parent=None, detail_item=None, external=False) -> None:
         url = detail_item or BASE_URL
         if external:
             open_url(url)
