@@ -11,6 +11,7 @@ import io
 import os
 import threading
 import time
+import types
 import unittest
 from collections import Counter
 from contextlib import redirect_stderr
@@ -45,6 +46,7 @@ from calibre.web.automate.metadata import (
     parse_html,
     run_in_browser,
 )
+from calibre.web.automate.test_download_deps import installed_download_deps
 from calibre.web.automate.worker import Response, start_worker
 
 if TYPE_CHECKING:
@@ -60,6 +62,10 @@ HOME_PAGE = (
     '<html><body><form id="nav-search-bar-form"><select id="searchDropdownBox">'
     + ''.join(f'<option value="{v}">{t}</option>' for v, t in OPTIONS)
     + '</select><input id="twotabsearchtextbox" name="field-keywords"></form></body></html>'
+)
+HOME_PAGE_NO_DEPARTMENTS = (
+    '<html><body><form id="nav-search-bar-form"><select id="searchDropdownBox"></select>'
+    '<input id="twotabsearchtextbox" name="field-keywords"></form></body></html>'
 )
 CONTINUE_PAGE = '''<html><body><h4>Click the button below to continue shopping</h4>
 <form method="get" action="/errors_page/validateCaptcha"><input type="hidden" name="amzn" value="x">
@@ -260,6 +266,11 @@ class FakePage:
         self.navigate(url)
 
     async def html(self) -> str:
+        if self.url == HOME and self.browser.departments_filled_late:
+            # The first read of the home page is from before its scripts
+            # filled in the department menu
+            self.browser.departments_filled_late = False
+            return HOME_PAGE_NO_DEPARTMENTS
         pages = self.browser.site.get(self.url)
         if pages is None:
             return f'<html><body><p id="url">{self.url}</p></body></html>'
@@ -331,6 +342,7 @@ class FakeBrowser:
         self.cookie_jar: list[dict[str, Any]] = []
         self.consent_navigates = True
         self.continue_to = ''
+        self.departments_filled_late = False
 
     async def cookies(self) -> list[dict[str, Any]]:
         return list(self.cookie_jar)
@@ -562,6 +574,28 @@ class TestHandlers(unittest.TestCase):
         self.assertNotIn('open', actions[1:])
         # The result tabs are closed, the search tab is kept for next time
         self.assertEqual([p.closed for p in browser.pages], [False, True, True, True])
+
+    def test_metadata_amazon_search_results(self) -> None:
+        browser = FakeBrowser(amazon_site())
+
+        async def t() -> dict[str, Any]:
+            state = fake_state(browser)
+            args = search_args(department='digital-text')
+            return await state.handle({'source': 'amazon', 'action': 'search_results', 'args': args, 'deadline': time.time() + 30})
+
+        result = run(t())
+        self.assertEqual(result, {'url': f'{HOME}s?k=audio+first', 'html': RESULTS})
+        self.assertEqual(browser.log[1], ('select', 'search-alias=digital-text'))
+        # Only the search tab was opened, none for the results
+        self.assertEqual(len(browser.pages), 1)
+        self.assertNotIn('click', [x[0] for x in browser.log])
+
+    def test_metadata_amazon_departments_filled_late(self) -> None:
+        browser = FakeBrowser(amazon_site())
+        browser.departments_filled_late = True
+        result = self.search(browser)[0]
+        self.assertNotIn('error', result)
+        self.assertEqual([x for x in browser.log if x[0] == 'select'], [('select', 'search-alias=stripbooks-intl-ship')])
 
     def test_metadata_amazon_search_tab_reused(self) -> None:
         site = amazon_site()
@@ -1036,6 +1070,7 @@ class TestLauncher(unittest.TestCase):
         LaunchedBrowser.launched, LaunchedBrowser.fail_with = [], None
         self.stderr = io.StringIO()
         self.patches = (
+            installed_download_deps(),
             patch.object(download_deps, 'use_camoufox', self.use_camoufox),
             patch('calibre.web.automate.browser.Browser', LaunchedBrowser),
             patch.object(metadata, 'state', None),
@@ -1385,9 +1420,66 @@ class TestGoogleImagesPlugin(unittest.TestCase):
         self.assertIn('no browser here', self.log.plain_text)
 
 
+class TestCamoufoxBackups(unittest.TestCase):
+    def setUp(self) -> None:
+        self.enterContext(installed_download_deps())
+
+    def test_metadata_live_download_deps(self) -> None:
+        live = types.ModuleType(download_deps.__name__)
+        with patch.object(download_deps, 'live', live):
+            self.assertIs(metadata.deps(), live)
+        # calibre < 9.20 has no live version of download_deps
+        old = SimpleNamespace(use_camoufox=download_deps.use_camoufox)
+        with patch.object(metadata, 'download_deps', old):
+            self.assertIs(metadata.deps(), old)
+
+    def test_metadata_camoufox_backups(self) -> None:
+        from urllib.error import HTTPError
+
+        release = download_deps.Release('152.0.4-beta.29', 'https://example.com/camoufox.zip', '')
+        queried: list[str] = []
+
+        # The latest_release() of calibre versions that do not know about the backups
+        def old_latest_release(self: download_deps.Camoufox, allow_prerelease: bool = False, **kw: object) -> download_deps.Release:
+            repo = download_deps.CAMOUFOX_REPO
+            queried.append(repo)
+            if repo != metadata.CAMOUFOX_BACKUP_REPO:
+                raise HTTPError(repo, 404, 'Not Found', None, None)  # type: ignore[arg-type]
+            return release
+
+        # Restores CAMOUFOX_REPO and CAMOUFOX_BACKUP_REPOS afterwards
+        with patch.dict(download_deps.__dict__), patch.object(download_deps.Camoufox, 'latest_release', old_latest_release):
+            del download_deps.CAMOUFOX_BACKUP_REPOS
+            original_repo = download_deps.CAMOUFOX_REPO
+            metadata.use_camoufox_backups_if_needed()
+            metadata.use_camoufox_backups_if_needed()  # patching twice is harmless
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(download_deps.camoufox_installer.latest_release(), release)
+            self.assertEqual(queried, [original_repo, metadata.CAMOUFOX_BACKUP_REPO])
+            # Later queries go straight to the backups
+            queried.clear()
+            self.assertEqual(download_deps.camoufox_installer.latest_release(), release)
+            self.assertEqual(queried, [metadata.CAMOUFOX_BACKUP_REPO])
+        self.assertTrue(hasattr(download_deps, 'CAMOUFOX_BACKUP_REPOS'))
+        # Nothing is patched in versions that know about the backups
+        original = download_deps.Camoufox.latest_release
+        metadata.use_camoufox_backups_if_needed()
+        self.assertIs(download_deps.Camoufox.latest_release, original)
+
+
 def find_tests() -> unittest.TestSuite:
     ans = unittest.TestSuite()
-    for cls in (TestPageAnalysis, TestTabPool, TestHandlers, TestQueueing, TestWorkerProcess, TestLauncher, TestAmazonPlugin, TestGoogleImagesPlugin):
+    for cls in (
+        TestPageAnalysis,
+        TestTabPool,
+        TestHandlers,
+        TestQueueing,
+        TestWorkerProcess,
+        TestLauncher,
+        TestAmazonPlugin,
+        TestGoogleImagesPlugin,
+        TestCamoufoxBackups,
+    ):
         ans.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
     return ans
 

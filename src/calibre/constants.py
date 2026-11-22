@@ -11,14 +11,14 @@ from typing import TYPE_CHECKING, NamedTuple, Self
 
 from polyglot.builtins import environ_item, hasenv
 
-__appname__   = 'calibre-viewer'                                    # ORIO
 if TYPE_CHECKING:
     import sqlite3
     from types import ModuleType
 
     import apsw
 
-numeric_version = (9, 18, 0)
+__appname__   = 'calibre-viewer'                                    # ORIO
+numeric_version = (9, 19, 0)
 __version__ = '.'.join(map(str, numeric_version))
 git_version = None
 __author__ = 'Kovid Goyal <kovid@kovidgoyal.net>'
@@ -219,7 +219,7 @@ class DeVendorLoader(Loader):
     def create_module(self, spec: ModuleSpec) -> ModuleType:
         return self.aliased_module
 
-    def exec_module(self, module: ModuleType) -> ModuleType:  # ty: ignore[invalid-method-override]
+    def exec_module(self, module: ModuleType) -> ModuleType:  # ty: ignore[incompatible-method-override]
         return module
 
     def __repr__(self) -> str:
