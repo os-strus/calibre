@@ -2,6 +2,7 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 import errno
+import hashlib
 import io
 import json
 import os
@@ -14,16 +15,27 @@ import types
 import unittest
 import unittest.mock
 import zipfile
-from contextlib import redirect_stderr
+from contextlib import contextmanager, redirect_stderr
 from threading import Event, Thread
 from typing import TYPE_CHECKING, Any
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 from calibre.constants import iswindows
 from calibre.web.automate import download_deps as dd
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
+
+
+@contextmanager
+def installed_download_deps() -> Iterator[None]:
+    """Have live_module() return the installed download_deps, so that the tests
+    neither run code from the calibre website nor check it for updates. Also in
+    any worker processes started meanwhile, such as the one recipes use."""
+    from calibre.live import NO_LIVE_MODULES_ENV_VAR
+
+    with unittest.mock.patch.object(dd, 'live', dd), unittest.mock.patch.dict(os.environ, {NO_LIVE_MODULES_ENV_VAR: '1'}):
+        yield
 
 
 class FakeInstaller(dd.Installer):
@@ -443,6 +455,43 @@ class TestDownloadDeps(unittest.TestCase):
         finally:
             dd.download_json = original
 
+    def test_download_deps_camoufox_backup_repos(self) -> None:
+        name = f'camoufox-152.0.4-beta.29-{dd.camoufox_os()}.{dd.camoufox_arch()}.zip'
+        backup_releases = [{'prerelease': False, 'assets': [{'name': name, 'browser_download_url': f'https://example.com/{name}'}]}]
+        requested: list[str] = []
+        missing = {dd.CAMOUFOX_REPO}
+
+        def download_json(url: str, *a: object, **kw: object) -> list[dict[str, Any]]:
+            requested.append(url)
+            for repo in missing:
+                if f'/repos/{repo}/' in url:
+                    raise HTTPError(url, 404, 'Not Found', None, None)  # type: ignore[arg-type]
+            return backup_releases
+
+        with unittest.mock.patch.object(dd, 'download_json', download_json), redirect_stderr(io.StringIO()):
+            # Falls back to the backups when the camoufox repository is not found
+            self.assertEqual(dd.camoufox_installer.latest_release().version, '152.0.4-beta.29')
+            self.assertEqual(len(requested), 2)
+            self.assertIn(f'/repos/{dd.CAMOUFOX_BACKUP_REPOS[0]}/', requested[1])
+            self.assertEqual(dd.camoufox_releases()[0], dd.CAMOUFOX_BACKUP_REPOS[0])
+            # The camoufox repository itself is used when it is available
+            missing.clear()
+            requested.clear()
+            self.assertEqual(dd.camoufox_releases()[0], dd.CAMOUFOX_REPO)
+            self.assertEqual(len(requested), 1)
+            # The error is reported when the backups are not found either
+            missing.update((dd.CAMOUFOX_REPO,) + dd.CAMOUFOX_BACKUP_REPOS)
+            with self.assertRaises(HTTPError):
+                dd.camoufox_installer.latest_release()
+
+        def unavailable(url: str, *a: object, **kw: object) -> list[dict[str, Any]]:
+            raise HTTPError(url, 503, 'Service Unavailable', None, None)  # type: ignore[arg-type]
+
+        # Other errors are not a reason to use the backups
+        with unittest.mock.patch.object(dd, 'download_json', unavailable), self.assertRaises(HTTPError) as cm:
+            dd.camoufox_releases()
+        self.assertEqual(cm.exception.code, 503)
+
     def test_download_deps_camoufox_emulated_arch(self) -> None:
         def asset(build: str, arch: str) -> dict[str, Any]:
             name = f'camoufox-152.0.4-{build}-win.{arch}.zip'
@@ -566,6 +615,67 @@ class TestDownloadDeps(unittest.TestCase):
             self.assertRaises(ValueError, dd.camoufox_font_lists, '../main')
         finally:
             dd.download_json = original
+
+    def test_download_deps_camoufox_font_lists_from_pypi(self) -> None:
+        font_lists = {'win': ['Segoe UI'], 'mac': ['Helvetica'], 'lin': ['Arimo']}
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w') as zf:
+            zf.writestr('camoufox/__init__.py', '')
+            zf.writestr('camoufox/fonts.json', json.dumps(font_lists))
+        wheel = buf.getvalue()
+        wheel_url = 'https://files.example.com/camoufox-0.5.9-py3-none-any.whl'
+        pypi = {
+            'info': {'version': '0.5.9'},
+            'urls': [
+                {'packagetype': 'sdist', 'url': 'https://files.example.com/camoufox-0.5.9.tar.gz'},
+                {'packagetype': 'bdist_wheel', 'url': wheel_url, 'digests': {'sha256': hashlib.sha256(wheel).hexdigest()}},
+            ],
+        }
+        repo_status = 404
+
+        def download_json(url: str, headers: dict[str, str] | None = None, timeout: float = dd.NETWORK_TIMEOUT) -> object:
+            self.assertLessEqual(timeout, dd.FONT_LISTS_TIMEOUT)
+            if url.startswith('https://raw.githubusercontent.com/'):
+                raise HTTPError(url, repo_status, 'error', None, None)  # type: ignore[arg-type]
+            self.assertEqual(url, f'https://pypi.org/pypi/{dd.CAMOUFOX_PYPI_PACKAGE}/json')
+            return pypi
+
+        def download_data(url: str, headers: dict[str, str] | None = None, timeout: float = dd.NETWORK_TIMEOUT) -> bytes:
+            self.assertEqual(url, wheel_url)
+            self.assertLessEqual(timeout, dd.FONT_LISTS_TIMEOUT)
+            return wheel
+
+        with (
+            unittest.mock.patch.object(dd, 'download_json', download_json),
+            unittest.mock.patch.object(dd, 'download_data', download_data),
+            redirect_stderr(io.StringIO()),
+        ):
+            # Falls back to the camoufox package when the source repository is not found
+            self.assertEqual(dd.camoufox_font_lists('158.0.1-beta.41'), font_lists)
+            # The package must match the checksum PyPI reports for it
+            pypi['urls'][1]['digests'] = {'sha256': '0' * 64}
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                dd.camoufox_font_lists('158.0.1-beta.41')
+            # Other errors are not a reason to use the package
+            repo_status = 503
+            with self.assertRaises(HTTPError):
+                dd.camoufox_font_lists('158.0.1-beta.41')
+
+    def test_download_deps_live_module(self) -> None:
+        live = types.ModuleType(dd.__name__)
+        with (
+            unittest.mock.patch.object(dd, 'live', None),
+            unittest.mock.patch('calibre.live.load_module', return_value=live) as load_module,
+            unittest.mock.patch('calibre.live.start_worker') as start_worker,
+        ):
+            self.assertIs(dd.live_module(), live)
+            self.assertIs(dd.live_module(), live)  # loaded only once
+            load_module.assert_called_once()
+            self.assertEqual(load_module.call_args.args, (dd.__name__,))
+            start_worker.assert_called_once()
+        # Live loading is set up the way calibre.live needs it
+        self.assertIsInstance(dd.module_version, int)
+        self.assertEqual(len(dd.minimum_calibre_version), 3)
 
     def test_download_deps_browserforge_patching(self) -> None:
         data_dir = os.path.join(self.tdir, 'bf-data')
